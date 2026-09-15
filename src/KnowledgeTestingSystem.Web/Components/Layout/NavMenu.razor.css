@@ -1,0 +1,185 @@
+/* Components/Layout/NavMenu.razor.css */
+
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.5rem;
+    height: 2.5rem;
+    color: white;
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
+}
+
+    .navbar-toggler:checked {
+        background-color: rgba(255, 255, 255, 0.5);
+    }
+
+.top-row {
+    height: 3.5rem;
+    background-color: #0d0d29;
+    padding-left: 1.5rem !important;
+}
+
+.navbar-brand {
+    font-size: 1.1rem;
+}
+
+.bi {
+    display: inline-block;
+    position: relative;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.75rem;
+    top: -1px;
+    background-size: cover;
+}
+
+.bi-pencil-square-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-pencil-square' viewBox='0 0 16 16'%3E%3Cpath d='M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z'/%3E%3Cpath fill-rule='evenodd' d='M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z'/%3E%3C/svg%3E");
+}
+
+.bi-card-list-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-card-list' viewBox='0 0 16 16'%3E%3Cpath d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z'/%3E%3Cpath d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8zm0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zM4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zm0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z'/%3E%3C/svg%3E");
+}
+
+.bi-gear-fill-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-gear-fill' viewBox='0 0 16 16'%3E%3Cpath d='M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z'/%3E%3C/svg%3E");
+}
+
+.bi-house-door-fill-nav-menu {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-house-door-fill' viewBox='0 0 16 16'%3E%3Cpath d='M6.5 14.5v-3.505c0-.245.25-.495.5-.495h2c.25 0 .5.25.5.5v3.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 1.5 7.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5Z'/%3E%3C/svg%3E");
+}
+
+.bi-bar-chart-line-fill-nav-menu { /* Иконка для "Статистика" */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-bar-chart-line-fill' viewBox='0 0 16 16'%3E%3Cpath d='M11 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12h.5a.5.5 0 0 1 0 1H.5a.5.5 0 0 1 0-1H1v-3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3h1V7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7h1V2zm1 12h2V2h-2v12zm-3 0V7H7v7h2zm-4 0V4H2v10h2z'/%3E%3C/svg%3E");
+}
+
+.nav-scrollable {
+    display: none;
+    background-color: #1a1a50;
+    color: white;
+}
+
+    /* Заставляем nav занимать всю высоту .nav-scrollable и быть flex-колонкой */
+    .nav-scrollable > nav.flex-column {
+        display: flex;
+        flex-direction: column;
+        height: 100%; /* Очень важно для прижатия элементов к низу */
+    }
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+/* Стили для секции Профиля */
+.admin-profile-items {
+    /* Контейнер для элементов профиля */
+}
+
+.profile-header-nav {
+    padding: 10px 15px;
+    font-weight: bold;
+    background-color: #0d0d29;
+    text-align: center; /* Текст "Профиль" по центру */
+    border-bottom: 1px solid #333377;
+    color: white;
+}
+
+.profile-photo-nav {
+    width: 120px; /* Ширина зоны для фото */
+    height: 120px; /* Высота зоны для фото */
+    background-color: #333399; /* Фон, если фото не загружено или прозрачное */
+    margin: 20px auto 15px auto; /* Отступы: верх, право/лево авто (для центрирования), низ */
+    border: 1px solid #5555bb;
+    border-radius: 50%; /* Делаем фото круглым */
+    overflow: hidden; /* Обрезаем изображение по кругу */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .profile-photo-nav img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Масштабирует изображение, чтобы заполнить контейнер, обрезая лишнее */
+    }
+
+.profile-info-nav {
+    background-color: #333399;
+    padding: 8px 15px; /* Уменьшим немного вертикальный padding */
+    margin: 0 15px 5px 15px; /* Уменьшим нижний отступ для более плотного расположения */
+    border: 1px solid #5555bb;
+    text-align: center; /* Текст ФИО и Группы по центру */
+    color: white;
+    border-radius: 4px; /* Небольшое скругление углов */
+}
+
+    .profile-info-nav.profile-name {
+        margin-bottom: 10px; /* Увеличим отступ после ФИО */
+    }
+
+/* Распорка */
+.sidebar-spacer-nav {
+    flex-grow: 1; /* Занимает все доступное пространство, отталкивая ссылки вниз */
+    background-color: #cccccc;
+    margin: 20px 15px; /* Отступы сверху/снизу и по бокам */
+    border: 1px solid #aaaaaa;
+    min-height: 20px; /* Минимальная высота, чтобы был виден */
+}
+
+/* Группа навигационных ссылок */
+.nav-links-group {
+    /* Этот блок будет прижат к низу благодаря .sidebar-spacer-nav */
+}
+
+.nav-item {
+    font-size: 0.9rem;
+    padding-bottom: 0.5rem;
+}
+
+/* Убираем отступ у первого nav-item в группе, т.к. отступ теперь у spacer или группы */
+.nav-links-group .nav-item:first-of-type {
+    padding-top: 0;
+}
+
+.nav-links-group .nav-item:last-of-type {
+    padding-bottom: 1rem;
+}
+
+.nav-item ::deep .nav-link {
+    color: #d7d7d7;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    line-height: 3rem;
+    width: 100%;
+}
+
+.nav-item ::deep a.active {
+    background-color: rgba(255,255,255,0.37);
+    color: white;
+}
+
+.nav-item ::deep .nav-link:hover {
+    background-color: rgba(255,255,255,0.1);
+    color: white;
+}
+
+@media (min-width: 641px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 3.5rem);
+        overflow-y: auto;
+        width: 250px;
+    }
+}

@@ -1,0 +1,540 @@
+﻿/* wwwroot/css/ActualTestPage.css */
+/* wwwroot/css/NewActualTestPage.css */
+:host {
+    display: block;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+.natp-container {
+    display: flex;
+    flex-direction: column;
+    height:100vh;/*calc(100vh - 3.5rem);  Предполагая, что 3.5rem это высота вашего MainLayout top-row */
+    background-color: #2c3e50; /* Темно-синий фон */
+    color: white;
+    font-family: sans-serif;
+}
+
+.natp-loading-indicator, .natp-error-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 1.2em;
+}
+
+    .natp-error-indicator .text-danger {
+        color: #ffcdd2;
+    }
+
+    .natp-error-indicator .natp-button {
+        margin-top: 20px;
+    }
+
+
+/* Верхняя панель */
+.natp-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #1a1a50; /* Темнее фон для табов */
+    padding: 0 15px;
+    border-bottom: 2px solid #0d0d29;
+    flex-shrink: 0; /* Не сжимается */
+}
+
+.natp-tabs {
+    display: flex;
+    overflow-x: auto; /* Если табов много */
+}
+
+.natp-tab-button {
+    padding: 10px 15px;
+    background-color: transparent;
+    border: none;
+    border-bottom: 3px solid transparent; /* Для индикации активного таба */
+    color: #a0b0ff;
+    cursor: pointer;
+    font-size: 0.95em;
+    white-space: nowrap;
+}
+
+    .natp-tab-button:hover {
+        background-color: rgba(255,255,255,0.1);
+        color: white;
+    }
+
+    .natp-tab-button.active {
+        color: white;
+        font-weight: bold;
+        border-bottom-color: #66ff66; /* Зеленый индикатор */
+    }
+
+.natp-time-remaining-display {
+    font-size: 0.95em;
+    color: #ddeeff;
+}
+
+    .natp-time-remaining-display span {
+        font-weight: bold;
+        color: #ffc107; /* Желтый для времени */
+        margin-left: 5px;
+    }
+
+/* Основной контент */
+.natp-main-content-wrapper {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden; /* Важно для предотвращения двойных скроллов */
+    background-color: #3a5da0; /* Основной синий фон рабочей области */
+}
+
+/* Центральная панель */
+.natp-center-panel {
+    flex: 2.5; /* Пропорции как в вашем макете */
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto; /* Скролл для этой панели */
+    border-right: 2px solid #1a1a50;
+}
+
+.natp-initial-state-table {
+    border-collapse: collapse;
+    margin-top: 5px; /* Отступ от "Имя_массива =" */
+    margin-bottom: 10px;
+    background-color: rgba(0,0,0,0.1); /* Легкий фон для таблицы */
+}
+
+    .natp-initial-state-table td {
+        border: 1px solid #5577bb; /* Синяя рамка ячеек */
+        padding: 4px 8px;
+        text-align: center;
+        min-width: 30px; /* Минимальная ширина ячейки */
+        color: #ddeeff; /* Светлый текст */
+    }
+
+/* Для обычных переменных, обернутых в div */
+.natp-initial-state-display div {
+    margin-bottom: 4px; /* Небольшой отступ между переменными */
+}
+
+.natp-initial-state-display {
+    margin-top: 10px;
+    font-family: Consolas, Monaco, monospace; /* Моноширинный шрифт для кода */
+    white-space: pre-wrap; /* Сохраняем переносы строк и пробелы */
+}
+    /* Заголовок "Начальные значения" теперь внутри, поэтому стилизуем его здесь */
+    .natp-initial-state-display strong {
+        color: #a0b0ff;
+    }
+
+.natp-task-description-header {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #5577bb;
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+    .natp-task-description-header p {
+        margin-bottom: 5px;
+    }
+
+    .natp-task-description-header strong {
+        color: #a0b0ff;
+    }
+
+.natp-solution-steps-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Уменьшим немного расстояние между шагами */
+    overflow-y: auto; /* Важно для прокрутки именно этой области */
+}
+
+.natp-step-entry {
+    background-color: #2c3e50;
+    border: 1px solid #1a1a50;
+    border-left-width: 5px; /* Сделаем левую рамку статуса чуть толще */
+    border-radius: 4px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+}
+    /* Стили для статусов .natp-step-entry.atp-instance-correct и т.д. остаются */
+    .natp-step-entry.atp-instance-correct {
+        border-left: 4px solid #28a745;
+        background-color: rgba(40,167,69,0.1);
+    }
+
+    .natp-step-entry.atp-instance-incorrect {
+        border-left: 4px solid #dc3545;
+        background-color: rgba(220,53,69,0.1);
+    }
+
+    .natp-step-entry.atp-instance-pending {
+        border-left: 4px solid #ffc107;
+    }
+
+    .natp-step-entry.atp-instance-submitted {
+        border-left: 4px solid #6c757d;
+    }
+
+.natp-step-text-wrapper { /* Новый контейнер для текста и иконки ошибки */
+    display: flex;
+    align-items: center;
+    flex-grow: 1; /* Занимает основное место */
+    overflow: hidden; /* Чтобы text-overflow работал */
+    min-width: 150px; /* Минимальная ширина для текста */
+}
+
+.natp-step-text {
+    flex-grow: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis; /* Применяется ко всему блоку, если он переполнен */
+    display: flex; /* Чтобы элементы внутри выстроились в ряд */
+    align-items: baseline; /* Выравнивание по базовой линии текста */
+    gap: 0.5em; /* Отступ между частями строки */
+    font-size: 0.9em;
+    color: #ddeeff;
+}
+/* Стили для отдельных частей текста */
+.natp-step-display-order {
+    font-weight: bold;
+    color: #a0b0ff; /* Другой цвет для порядкового номера */
+}
+
+.natp-step-title-prefix {
+    /* Можно не стилизовать или задать font-style: italic; */
+}
+
+.natp-step-algo-number {
+    font-weight: bold;
+    color: white; /* Выделяем номер шага */
+}
+
+.natp-step-description-inline {
+    color: #c0d0ff; /* Более тусклый цвет для описания */
+    /* text-overflow и overflow будут работать на родительском .natp-step-text */
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.natp-step-error-indicator { /* Стили для иконки ошибки остаются */
+    color: #ff7f7f;
+    font-weight: bold;
+    cursor: help;
+    flex-shrink: 0; /* Чтобы иконка не сжималась */
+}
+
+.natp-step-inputs {
+    /* grid-area: inputs; - больше не нужен */
+    display: flex; /* Поля ввода теперь тоже в строку */
+    flex-wrap: nowrap; /* Запрещаем перенос полей ввода, если их много */
+    gap: 8px; /* Отступ между полями ввода */
+    align-items: center;
+    /* overflow-x: auto; */ /* Можно добавить, если полей ОЧЕНЬ много, но лучше избегать */
+    flex-shrink: 2; /* Позволяем этому блоку сжиматься больше, чем тексту */
+    min-width: 100px; /* Минимальная ширина для блока инпутов */
+}
+
+.atp-step0-input-fields { /* Переименовать в natp-step0-input-fields в HTML и здесь */
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #3a5da0; /* Отличается от фона шага */
+    border-radius: 4px;
+    border: 1px dashed #5577bb;
+}
+
+.atp-block-label-inline { /* Переименовать в natp-block-label-inline */
+    font-weight: bold;
+    margin-bottom: 8px;
+    font-size: 0.95em;
+    color: #a0b0ff;
+}
+
+.atp-variable-input-container {
+    display: flex;
+    align-items: center; /* Выравнивание метки и поля/полей */
+    gap: 4px;
+    margin-bottom: 0px; /* Отступ между разными переменными */
+}
+
+.atp-array-input-cells {
+    display: flex;
+    flex-wrap: wrap; /* Позволяет ячейкам переноситься, если не влезают */
+    align-items: center;
+    gap: 5px;
+    border: 1px solid #5577bb; /* Рамка вокруг ячеек массива */
+    padding: 5px;
+    border-radius: 3px;
+    background-color: rgba(0,0,0,0.1); /* Легкий фон для группы ячеек */
+}
+
+.atp-array-cell {
+    width: 30px; /* Ширина одной ячейки массива */
+    padding: 4px 6px;
+    text-align: center;
+    background-color: #cccccc;
+    border: 1px solid #aaaaaa;
+    border-radius: 3px;
+    color: #333;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 0.9em;
+}
+
+.atp-single-value-input {
+    /* Стили для обычного поля ввода, если они отличаются от .atp-array-cell */
+    padding: 4px 6px;
+    background-color: #cccccc;
+    border: 1px solid #aaaaaa;
+    border-radius: 3px;
+    color: #333;
+    font-family: Consolas, Monaco, monospace;
+    width: 60px; /* Пример ширины */
+    font-size: 0.9em;
+}
+
+.atp-variable-label {
+    font-size: 0.85em; /* Можно чуть уменьшить шрифт метки */
+    min-width: auto; /* Убираем min-width, если нужно компактнее */
+}
+
+.natp-step-actions {
+    /* grid-area: actions; - больше не нужен */
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0; /* Не сжимается */
+}
+/* Стили для .natp-step-remove и .natp-step-type-button остаются, можно чуть уменьшить размеры/паддинги */
+.natp-step-remove {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    font-size: 1em;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+}
+    .natp-step-remove:hover {
+        background-color: #c82333;
+    }
+
+.natp-step-type-button {
+    background-color: #3a5da0;
+    color: white;
+    border: 1px solid #5577bb;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    font-size: 0.7em;
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+}
+
+    .natp-step-type-button:hover {
+        background-color: #5577bb;
+    }
+
+.natp-add-first-step-prompt {
+    margin-top: 15px;
+    padding: 10px;
+    text-align: center;
+    background-color: rgba(0,0,0,0.1);
+    border-radius: 4px;
+}
+
+    .natp-add-first-step-prompt span {
+        margin-right: 10px;
+    }
+
+    .natp-add-first-step-prompt .natp-step-type-button {
+        margin: 0 3px;
+    }
+
+/* Правая панель */
+.natp-right-panel {
+    flex: 1;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    background-color: #1a1a50; /* Фон для правой панели */
+}
+
+.natp-image-container, .natp-algorithm-steps-description, .natp-action-buttons-panel {
+    background-color: #2c3e50; /* Фон для блоков внутри правой панели */
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #0d0d29;
+}
+
+.natp-image-container {
+    min-height: 300px; /* Как на макете */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .natp-image-container img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .natp-image-container span {
+        color: #a0b0ff;
+        font-style: italic;
+    }
+
+.natp-panel-title {
+    font-weight: bold;
+    color: #ddeeff;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #3a5da0;
+}
+
+.natp-steps-list-content {
+    max-height: 200px; /* Ограничиваем высоту списка шагов */
+    overflow-y: auto;
+}
+
+.natp-algo-step-item {
+    padding: 4px 0;
+    font-size: 0.9em;
+    color: #c0d0ff;
+    cursor: help; /* Чтобы title с описанием был более очевиден */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+    .natp-algo-step-item:hover {
+        background-color: rgba(255,255,255,0.05);
+    }
+
+.natp-action-buttons-panel {
+    margin-top: auto; /* Прижимает кнопки к низу */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.natp-button { /* Общий стиль для кнопок Проверить/Далее */
+    width: 100%;
+    padding: 10px 15px;
+    font-size: 1em;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.natp-check-button {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+    .natp-check-button:hover:not(:disabled) {
+        background-color: #e0a800;
+    }
+
+.natp-next-button {
+    background-color: #007bff;
+}
+    /* Или ваш зеленый */
+    .natp-next-button:hover:not(:disabled) {
+        background-color: #0069d9;
+    }
+
+.natp-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.natp-button .spinner-border-sm {
+    margin-right: 5px;
+}
+
+
+.atp-status-icon {
+    margin-left: 5px;
+}
+
+.error-icon {
+    color: #ff7f7f;
+}
+
+.correct-icon {
+    color: #28a745;
+}
+
+.pending-icon {
+    color: #ffc107;
+}
+
+.atp-input-error-message {
+    font-size: 0.8em;
+    /* color: #dc3545; /* text-danger уже должен это делать */
+    margin-left: 5px; /* Или display: block; для отображения под инпутом */
+    width: 100%; /* Если display: block */
+    text-align: left;
+}
+
+.natp-validation-summary {
+    color: #856404; /* Цвет текста для warning */
+    background-color: #fff3cd; /* Фон для warning */
+    border-color: #ffeeba;
+    padding: .75rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: .25rem;
+    text-align: left;
+}
+
+.atp-2d-array-input-cells {
+    /* Контейнер для таблицы */
+    border: 1px solid #5577bb;
+    padding: 5px;
+    border-radius: 3px;
+    background-color: rgba(0,0,0,0.1);
+}
+
+    .atp-2d-array-input-cells table {
+        border-collapse: collapse; /* Убираем двойные рамки между ячейками */
+    }
+
+    .atp-2d-array-input-cells td {
+        padding: 2px; /* Небольшой отступ внутри ячейки таблицы */
+        border: none; /* Убираем рамки у самой ячейки таблицы */
+    }
+
+/* Стили для .atp-array-cell теперь применяются и к ячейкам 2D массива */
+.atp-array-cell {
+    width: 40px; /* Уменьшим для компактности, подберите значение */
+    height: 28px; /* Явная высота для выравнивания */
+    padding: 4px;
+    text-align: center;
+    background-color: #cccccc;
+    border: 1px solid #aaaaaa;
+    border-radius: 3px;
+    color: #333;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 0.9em;
+    box-sizing: border-box; /* Важно, чтобы padding не увеличивал размер */
+}
+/*/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////*/

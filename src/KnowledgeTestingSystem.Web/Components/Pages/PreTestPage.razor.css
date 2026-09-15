@@ -1,0 +1,232 @@
+﻿/* wwwroot/css/PreTestPage.css */
+.ptp-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 3.5rem);
+    background-color: #f0f0f0;
+    color: #333;
+    padding: 20px;
+    box-sizing: border-box;
+    font-family: sans-serif;
+}
+
+.ptp-title-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #0d0d29;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.ptp-session-name {
+    font-size: 1.4em;
+    font-weight: bold;
+}
+
+.ptp-time-info {
+    font-size: 1em;
+}
+
+.ptp-body {
+    display: flex;
+    flex-grow: 1;
+    gap: 20px;
+    overflow: hidden;
+}
+
+.ptp-test-selection-area {
+    flex: 0 0 250px;
+    display: flex;
+    flex-direction: column;
+    background-color: #1a1a50;
+    color: white;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+/* Новый стиль для заголовка списка заданий */
+.ptp-info-label {
+    font-size: 1.1em;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 10px;
+    color: white; /* Убедимся, что текст виден на темном фоне */
+}
+
+.ptp-test-list-wrapper {
+    display: flex;
+    flex-grow: 1; /* Занимает все доступное место в ptp-test-selection-area */
+    overflow: hidden;
+    /* margin-bottom был нужен для кнопки "Назад", теперь можно убрать или уменьшить */
+    margin-bottom: 0;
+    border: 1px solid #333399;
+    border-radius: 3px;
+}
+
+.ptp-test-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+.ptp-test-item {
+    background-color: #333399;
+    color: white;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    /* cursor: pointer; УБРАНО, так как элементы не кликабельны */
+    border: 1px solid #5555bb;
+    text-align: center;
+}
+
+    .ptp-test-item:last-child {
+        margin-bottom: 0;
+    }
+
+/* :hover и .selected больше не нужны для ptp-test-item в этом контексте */
+/* .ptp-test-item:hover {
+        background-color: #5555bb;
+    }
+    .ptp-test-item.selected {
+        background-color: #008000; 
+        border-color: #006400;
+        font-weight:bold;
+    } */
+
+
+.ptp-scrollbar-mock {
+    width: 12px;
+    background-color: #0d0d29;
+    border-radius: 6px;
+    padding: 2px;
+    display: flex;
+    justify-content: center;
+}
+
+.ptp-scrollbar-thumb-mock {
+    width: 8px;
+    height: 60px;
+    background-color: #5555bb;
+    border-radius: 4px;
+}
+
+.ptp-options-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding-left: 30px;
+}
+
+.ptp-test-type-container {
+    background-color: #1a1a50;
+    color: white;
+    padding: 20px;
+    border-radius: 5px;
+    min-width: 250px;
+    border: 1px solid #0d0d29;
+}
+
+.ptp-label {
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-bottom: 15px;
+    text-align: center;
+    display: block;
+}
+
+.ptp-radio-option {
+    margin-bottom: 12px;
+}
+
+    .ptp-radio-option:last-child {
+        margin-bottom: 0;
+    }
+
+.ptp-custom-radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 1em;
+    color: white;
+}
+
+    .ptp-custom-radio-label input[type="radio"] {
+        opacity: 0;
+        position: absolute;
+        width: 0;
+        height: 0;
+    }
+
+.ptp-custom-radio-outer {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #5555bb;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    background-color: #cccccc;
+}
+
+.ptp-custom-radio-inner {
+    width: 10px;
+    height: 10px;
+    background-color: transparent;
+    border-radius: 50%;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.ptp-custom-radio-label input[type="radio"]:checked + .ptp-custom-radio-outer .ptp-custom-radio-inner {
+    background-color: #00a000;
+}
+
+.ptp-custom-radio-label input[type="radio"]:checked + .ptp-custom-radio-outer {
+    border-color: #008000;
+}
+
+
+.ptp-footer-action {
+    display: flex;
+    justify-content: space-between; /* Располагает кнопки по краям */
+    align-items: center; /* Выравнивает кнопки по центру вертикально */
+    margin-top: 20px;
+    gap: 15px; /* Добавляем промежуток между кнопками Назад и Начать */
+}
+
+.ptp-button {
+    padding: 10px 25px;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+.ptp-button-back {
+    background-color: #5555bb;
+    /* width: 100%; УБРАНО, так как кнопка теперь не одна в своем блоке */
+}
+
+    .ptp-button-back:hover {
+        background-color: #444499;
+    }
+
+.ptp-button-start {
+    background-color: #008000;
+}
+
+    .ptp-button-start:hover {
+        background-color: #006400;
+    }
+
+    .ptp-button-start:disabled {
+        background-color: #555;
+        cursor: not-allowed;
+    }

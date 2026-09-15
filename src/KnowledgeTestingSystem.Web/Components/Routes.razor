@@ -1,0 +1,29 @@
+﻿@using KnowledgeTestingSystem.Web.Components.Layout
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated != true)
+                    {
+                        <RedirectToLogin />
+                    }
+                    else
+                    {
+                        <p role="alert" class="text-danger">У вас нет прав для доступа к этому ресурсу.</p>
+                    }
+                </NotAuthorized>
+                <Authorizing>
+                    <p>Проверка авторизации...</p>
+                </Authorizing>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Не найдено</PageTitle>
+            <LayoutView Layout="typeof(MainLayout)">
+                <p role="alert">Извините, по этому адресу ничего нет.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

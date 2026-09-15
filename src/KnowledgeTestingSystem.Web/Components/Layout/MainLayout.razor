@@ -1,0 +1,61 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+@implements IDisposable
+<div class="page @(IsActualTestPageActive ? "full-screen-mode" : "")">
+    @if (!IsActualTestPageActive)
+    {
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+    }
+
+    <main>
+        <article class="content @(IsActualTestPageActive ? "px-0 py-0" : "px-0")">
+            @Body
+        </article>
+
+    </main>
+</div>
+
+@* <div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div> *@
+
+@code {
+    private bool IsActualTestPageActive = false;
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.LocationChanged += HandleLocationChanged;
+        UpdateLayoutForCurrentPage(NavigationManager.Uri);
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        UpdateLayoutForCurrentPage(e.Location);
+    }
+
+    private void UpdateLayoutForCurrentPage(string currentUriAbsolute)
+    {
+        var currentPath = new Uri(currentUriAbsolute).AbsolutePath;
+        bool newState = currentPath.StartsWith("/actual-test/", StringComparison.OrdinalIgnoreCase);
+
+        if (newState != IsActualTestPageActive)
+        {
+            IsActualTestPageActive = newState;
+            InvokeAsync(StateHasChanged); // Обновляем UI, если состояние изменилось
+        }
+    }
+
+    private void NavigateToHome()
+    {
+        NavigationManager.NavigateTo("sessions");
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= HandleLocationChanged;
+    }
+}

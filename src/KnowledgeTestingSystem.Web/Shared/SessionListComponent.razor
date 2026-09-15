@@ -1,0 +1,71 @@
+﻿@inject NavigationManager NavigationManager
+
+@if (DisplaySessions == null)
+{
+    <p><em>@LoadingMessage</em></p>
+}
+else if (!DisplaySessions.Any())
+{
+    <p><em>@NoSessionsMessage</em></p>
+}
+else
+{
+    <div class="session-list">
+        @foreach (var session in DisplaySessions)
+        {
+            <div class="session-item">
+                <div class="session-name">@session.Name</div>
+                <div class="session-action">
+                    @switch (session.Status)
+                    {
+                        case SessionStatus.Completed:
+                            <button class="btn-results" @onclick="() => OnShowResults.InvokeAsync(session.Id)">Результаты</button>
+                            break;
+                        case SessionStatus.InProgress: // Добавим этот статус, если нужен
+                            <button class="btn-continue" @onclick="() => OnContinueSession.InvokeAsync(session.Id)">Продолжить</button>
+                            break;
+                        case SessionStatus.NotStarted:
+                            <button class="btn-start" @onclick="() => OnStartSession.InvokeAsync(session.Id)">Начать</button>
+                            break;
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public IEnumerable<TestSessionView>? DisplaySessions { get; set; }
+
+    [Parameter]
+    public string LoadingMessage { get; set; } = "Загрузка сессий...";
+
+    [Parameter]
+    public string NoSessionsMessage { get; set; } = "Сессии не найдены.";
+
+    // Коллбэки для действий
+    [Parameter]
+    public EventCallback<int> OnShowResults { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnContinueSession { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnStartSession { get; set; }
+
+
+    // Общая модель представления для сессии (может немного отличаться от TestSession из страниц)
+    // Если TestSession у вас уже общий, можно использовать его.
+    // Для примера создам отдельную ViewModel, чтобы было ясно, что передается.
+    public class TestSessionView
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public SessionStatus Status { get; set; }
+        // Можно добавить другие поля, если они нужны для отображения
+    }
+
+    // Общий enum для статуса (если еще не вынесен)
+    public enum SessionStatus { NotStarted, InProgress, Completed }
+}

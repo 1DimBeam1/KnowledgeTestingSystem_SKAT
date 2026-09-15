@@ -1,0 +1,283 @@
+﻿@* Components/Pages/UserSettingsPage.razor *@
+@page "/settings"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using KnowledgeTestingSystem.Web.Auth
+
+<PageTitle>Настройки профиля</PageTitle>
+
+<div class="settings-container">
+    <h3>Настройки профиля</h3>
+
+    @if (isLoading)
+    {
+        <p><em>Загрузка данных профиля...</em></p>
+    }
+    else if (userModel == null)
+    {
+        <p class="text-danger">Не удалось загрузить данные пользователя.</p>
+    }
+    else
+    {
+        <EditForm Model="userModel" OnValidSubmit="HandleProfileUpdate" FormName="userSettingsForm">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-group">
+                <label for="fullName">ФИО:</label>
+                <InputText id="fullName" class="form-control" @bind-Value="userModel.FullName" />
+            </div>
+
+            <div class="form-group">
+                <label for="group">Группа:</label>
+                @if (currentUserRole == "Обучающийся") // Редактирование группы только для обучающихся
+                {
+                    if (availableGroups.Any())
+                    {
+                        <InputSelect id="group" class="form-control" @bind-Value="userModel.SelectedGroupId">
+                            <option value="">-- Выберите группу --</option>
+                            @foreach (var group in availableGroups)
+                            {
+                                <option value="@group.GroupId">@group.Name</option>
+                            }
+                        </InputSelect>
+                    }
+                    else
+                    {
+                        <p><em>Нет доступных групп.</em></p>
+                    }
+                }
+                else
+                {
+                    <InputText id="groupName" class="form-control" @bind-Value="userModel.GroupName" readonly />
+                }
+            </div>
+
+            <hr />
+            <h4>Изменение учетных данных</h4>
+
+            <div class="form-group">
+                <label for="login">Логин:</label>
+                <InputText id="login" class="form-control" @bind-Value="userModel.Login" />
+            </div>
+
+            <div class="form-group">
+                <label for="currentPassword">Текущий пароль (для смены пароля):</label>
+                <InputText id="currentPassword" type="password" class="form-control" @bind-Value="userModel.CurrentPassword" />
+            </div>
+
+            <div class="form-group">
+                <label for="newPassword">Новый пароль (оставьте пустым, если не меняете):</label>
+                <InputText id="newPassword" type="password" class="form-control" @bind-Value="userModel.NewPassword" />
+            </div>
+
+            <div class="form-group">
+                <label for="confirmNewPassword">Подтвердите новый пароль:</label>
+                <InputText id="confirmNewPassword" type="password" class="form-control" @bind-Value="userModel.ConfirmNewPassword" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success mt-2">@successMessage</div>
+            }
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-2">@errorMessage</div>
+            }
+
+            <button type="submit" class="btn btn-primary mt-3" disabled="@isSaving">
+                @if (isSaving)
+                {
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                }
+                Сохранить изменения
+            </button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private UserSettingsModel? userModel;
+    private List<GroupViewModel> availableGroups = new List<GroupViewModel>();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string? successMessage;
+    private string? errorMessage;
+    private string? currentUserRole;
+    private int currentUserId;
+
+    public class UserSettingsModel
+    {
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "ФИО обязательно для заполнения.")]
+        [StringLength(100, ErrorMessage = "ФИО не может быть длиннее 100 символов.")]
+        public string FullName { get; set; } = string.Empty;
+
+        public int? SelectedGroupId { get; set; } // Для InputSelect, может быть null, если группа не выбрана
+        public string GroupName { get; set; } = string.Empty; // Для отображения, если не редактируется
+
+        [Required(ErrorMessage = "Логин обязателен для заполнения.")]
+        [StringLength(50, MinimumLength = 3, ErrorMessage = "Логин должен содержать от 3 до 50 символов.")]
+        public string Login { get; set; } = string.Empty;
+
+        public string? CurrentPassword { get; set; } // Не Required, нужен только для смены пароля
+
+        [StringLength(100, MinimumLength = 6, ErrorMessage = "Новый пароль должен содержать не менее 6 символов.")]
+        public string? NewPassword { get; set; }
+
+        [Compare(nameof(NewPassword), ErrorMessage = "Пароли не совпадают.")]
+        public string? ConfirmNewPassword { get; set; }
+    }
+
+    public class GroupViewModel
+    {
+        public int GroupId { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userPrincipal = authState.User;
+
+        if (userPrincipal.Identity != null && userPrincipal.Identity.IsAuthenticated)
+        {
+            var userIdString = userPrincipal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            currentUserRole = userPrincipal.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+            if (int.TryParse(userIdString, out currentUserId))
+            {
+                var dbUser = await DbContext.Users
+                                        .Include(u => u.Group) // Загружаем группу сразу
+                                        .FirstOrDefaultAsync(u => u.UserId == currentUserId);
+
+                if (dbUser != null)
+                {
+                    userModel = new UserSettingsModel
+                        {
+                            UserId = dbUser.UserId,
+                            FullName = dbUser.Name, // Предполагаем, что FullName это свойство Name в User
+                            Login = dbUser.Login,
+                            SelectedGroupId = dbUser.GroupId,
+                            GroupName = dbUser.Group?.Name ?? (currentUserRole == "Обучающийся" ? "Группа не назначена" : "")
+                        };
+
+                    if (currentUserRole == "Обучающийся")
+                    {
+                        availableGroups = await DbContext.Groups
+                                                    .Select(g => new GroupViewModel { GroupId = g.GroupId, Name = g.Name })
+                                                    .ToListAsync();
+                    }
+                }
+                else
+                {
+                    errorMessage = "Не удалось найти данные пользователя.";
+                }
+            }
+            else
+            {
+                errorMessage = "Ошибка идентификации пользователя.";
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/login"); // Если не аутентифицирован, на страницу входа
+        }
+        isLoading = false;
+    }
+
+    private async Task HandleProfileUpdate()
+    {
+        if (userModel == null) return;
+
+        isSaving = true;
+        successMessage = null;
+        errorMessage = null;
+
+        var dbUser = await DbContext.Users.FindAsync(userModel.UserId);
+        if (dbUser == null)
+        {
+            errorMessage = "Пользователь не найден в базе данных.";
+            isSaving = false;
+            return;
+        }
+
+        bool loginChanged = dbUser.Login != userModel.Login;
+
+        if (loginChanged && await DbContext.Users.AnyAsync(u => u.Login == userModel.Login && u.UserId != userModel.UserId))
+        {
+            errorMessage = "Этот логин уже занят.";
+            isSaving = false;
+            return;
+        }
+
+        dbUser.Name = userModel.FullName;
+        dbUser.Login = userModel.Login;
+        if (currentUserRole == "Обучающийся")
+        {
+            dbUser.GroupId = userModel.SelectedGroupId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(userModel.NewPassword))
+        {
+            // ... (логика проверки и обновления пароля) ...
+            if (string.IsNullOrWhiteSpace(userModel.CurrentPassword) || dbUser.Password != userModel.CurrentPassword)
+            {
+                errorMessage = "Текущий пароль введен неверно или не указан.";
+                isSaving = false;
+                return;
+            }
+            if (userModel.NewPassword != userModel.ConfirmNewPassword)
+            {
+                errorMessage = "Новый пароль и его подтверждение не совпадают.";
+                isSaving = false;
+                return;
+            }
+            dbUser.Password = userModel.NewPassword;
+        }
+
+        try
+        {
+            await DbContext.SaveChangesAsync();
+            successMessage = "Данные профиля успешно обновлены!";
+
+            if (loginChanged || (currentUserRole == "Обучающийся" && dbUser.GroupId != userModel.SelectedGroupId))
+            {
+                var updatedUserForClaims = await DbContext.Users
+                                                .Include(u => u.Group)
+                                                .FirstOrDefaultAsync(u => u.UserId == dbUser.UserId);
+                if (updatedUserForClaims != null)
+                {
+                    // Приводим базовый AuthStateProvider к нашему кастомному типу
+                    if (AuthStateProvider is CustomAuthenticationStateProvider customCastedProvider)
+                    {
+                        await customCastedProvider.MarkUserAsAuthenticated(updatedUserForClaims);
+                    }
+                }
+            }
+
+            if (currentUserRole == "Обучающийся" && userModel.SelectedGroupId.HasValue)
+            {
+                var selectedGroup = availableGroups.FirstOrDefault(g => g.GroupId == userModel.SelectedGroupId.Value);
+                userModel.GroupName = selectedGroup?.Name ?? "Группа не назначена";
+            }
+        }
+        catch (Exception ex) // Более общий catch для любых ошибок сохранения
+        {
+            errorMessage = $"Произошла ошибка при сохранении: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}

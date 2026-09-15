@@ -1,0 +1,252 @@
+﻿@* Components/Pages/SessionsPage.razor (или где у вас страницы) *@
+@page "/sessions" 
+@using Microsoft.EntityFrameworkCore
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject NavigationManager NavigationManager
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider // Для получения ID и роли текущего пользователя
+
+<PageTitle>Тестовые сессии</PageTitle>
+
+<link href="css/SessionsPage.css" rel="stylesheet" /> @* Создадим для нее свой CSS, можно скопировать из AdminPageCSS *@
+
+<div class="sessions-main-container">
+    <div class="sessions-main-content">
+        <div class="search-bar">
+            <input type="text" placeholder="Поиск сессии..." @bind="SearchTerm" @bind:event="oninput" />
+        </div>
+        <div class="session-list">
+            @if (isLoading)
+            {
+                <p><em>Загрузка сессий...</em></p>
+            }
+            else if (displaySessions == null || !displaySessions.Any())
+            {
+                <p><em>Доступные сессии не найдены.</em></p>
+            }
+            else
+            {
+                @foreach (var sessionView in displaySessions)
+                {
+                    <div class="session-item">
+                        <div class="session-name">@sessionView.SessionName</div>
+                        <div class="session-action">
+                            @switch (sessionView.Status)
+                            {
+                                case SessionDisplayStatus.Completed:
+                                    <button class="btn-results" @onclick="() => ShowResults(sessionView.SessionId)">Результаты</button>
+                                    break;
+                                case SessionDisplayStatus.InProgress: // Если у вас будет такой статус
+                                    <button class="btn-continue" @onclick="() => ContinueSession(sessionView.SessionId)">Продолжить</button>
+                                    break;
+                                case SessionDisplayStatus.NotStarted:
+                                    <button class="btn-start" @onclick="() => StartSession(sessionView.SessionId)">Начать</button>
+                                    break;
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isPrerendering = true;
+    private string _searchTerm = string.Empty;
+        public string SearchTerm
+    {
+        get => _searchTerm;
+        set
+        {
+            if (_searchTerm != value) // Обновляем только если значение изменилось
+            {
+                _searchTerm = value;
+                FilterDisplaySessions(); // Вызываем фильтрацию здесь
+            }
+        }
+    }
+    private List<SessionViewModel>? allUserSessions; // Все сессии, доступные текущему пользователю
+    private List<SessionViewModel>? displaySessions; // Отфильтрованные сессии для отображения
+    private bool isLoading = true;
+
+    // Вспомогательная ViewModel для отображения сессий
+    public class SessionViewModel
+    {
+        public int SessionId { get; set; }
+        public string SessionName { get; set; } = string.Empty;
+        public SessionDisplayStatus Status { get; set; } // Определим этот enum ниже
+        public DateTime DateStart { get; set; }
+        public DateTime? DateFinish { get; set; }
+        // Можно добавить другие поля, если нужно для логики статуса (например, SolutionsByUser)
+    }
+
+    public enum SessionDisplayStatus { NotStarted, InProgress, Completed, Expired } // Добавим Expired
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            // Получаем UserId. ClaimTypes.NameIdentifier обычно хранит ID пользователя.
+            // Если вы храните ID в другом claim, используйте его.
+            var userIdString = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            // ИЛИ если вы логин используете как идентификатор, и он уникален:
+            // var userName = user.Identity.Name;
+            // var dbUser = await DbContext.Users.FirstOrDefaultAsync(u => u.Login == userName);
+            // var userId = dbUser?.UserId;
+
+            if (int.TryParse(userIdString, out int currentUserId))
+            {
+                await LoadUserSessionsAsync(currentUserId, user.IsInRole("Преподаватель"));
+            }
+            else
+            {
+                // Обработка случая, если ID пользователя не найден или не является числом
+                allUserSessions = new List<SessionViewModel>();
+                Console.WriteLine("Ошибка: Не удалось получить ID пользователя из claims.");
+            }
+        }
+        else
+        {
+            allUserSessions = new List<SessionViewModel>();
+        }
+
+        FilterDisplaySessions();
+        isLoading = false;
+    }
+
+
+    private async Task LoadUserSessionsAsync(int userId, bool isTeacher)
+    {
+        var query = DbContext.Sessions.AsQueryable();
+
+        if (isTeacher)
+        {
+            // Преподаватель видит все сессии
+            // Можно добавить Include(s => s.Groups), если нужно отображать группы для каждой сессии
+            query = query.Include(s => s.Groups);
+        }
+        else
+        {
+            // Обучающийся видит только сессии своих групп
+            var userWithGroup = await DbContext.Users
+                                        .Include(u => u.Group) // Загружаем группу пользователя
+                                        .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (userWithGroup?.Group != null)
+            {
+                var userGroupId = userWithGroup.GroupId;
+                // Сессии, в которых состоит группа пользователя
+                query = query.Where(s => s.Groups.Any(g => g.GroupId == userGroupId));
+            }
+            else
+            {
+                // Пользователь не состоит в группе, или группа не найдена
+                allUserSessions = new List<SessionViewModel>();
+                return;
+            }
+        }
+
+        var sessionsFromDb = await query
+                                .OrderByDescending(s => s.DateStart) // Сначала новые
+                                .ToListAsync();
+
+        allUserSessions = sessionsFromDb.Select(s => new SessionViewModel
+        {
+            SessionId = s.SessionId,
+            // Имя сессии. Можно сделать более информативным, например, добавив тип или даты
+            SessionName = $"Сессия ID {s.SessionId} ({s.SessionType?.ToString() ?? "N/A"})",
+            DateStart = s.DateStart,
+            DateFinish = s.DateFinish,
+            // Логика определения статуса (упрощенная)
+            // Здесь нужна более сложная логика, возможно, с проверкой SolutionsByUser
+            Status = DetermineSessionStatus(s, userId)
+        }).ToList();
+    }
+    
+    // Метод для определения статуса сессии (НУЖНО АДАПТИРОВАТЬ ПОД ВАШУ ЛОГИКУ)
+    private SessionDisplayStatus DetermineSessionStatus(Data.Models.Session session, int userId)
+    {
+        // Это примерная логика. Вам нужно ее доработать на основе ваших данных
+        // Например, проверять наличие решений пользователя (SolutionsByUser) для этой сессии.
+
+        // Проверяем, есть ли запись в SolutionsByUser для текущего пользователя и сессии
+        // bool hasSolution = DbContext.SolutionsByUsers
+        //     .Any(sbu => sbu.SessionId == session.SessionId && sbu.UserId == userId);
+
+        // if (hasSolution) {
+        //     // Предположим, если есть решение, то она завершена. 
+        //     // Или нужно проверять поле "оценка", "статус прохождения" в SolutionsByUser
+        //     return SessionDisplayStatus.Completed;
+        // }
+
+        if (session.DateFinish < DateTime.UtcNow) {
+            return SessionDisplayStatus.Expired; // Или Completed, если Expired == Completed
+        }
+        if (session.DateStart > DateTime.UtcNow) {
+            return SessionDisplayStatus.NotStarted;
+        }
+        // Если дата начала прошла, а дата окончания еще нет (или не задана)
+        // и нет решения, то InProgress или NotStarted (если пользователь еще не начал)
+        // Для простоты пока оставим NotStarted.
+        // Здесь можно добавить логику для InProgress, если пользователь начал, но не закончил.
+        
+        // ВАЖНАЯ ЗАГЛУШКА: Замените это на реальную логику определения статуса
+        // Сейчас просто для примера будем чередовать
+        // return (session.SessionId % 2 == 0) ? SessionDisplayStatus.Completed : SessionDisplayStatus.NotStarted;
+        // Более реалистичный пример:
+        if (session.SessionId == 101 && allUserSessions != null && allUserSessions.Any(s => s.SessionId == 101)) { // Пример для UserPage
+             return SessionDisplayStatus.Completed;
+        }
+
+        // Для AdminPage
+        if (session.SessionId == 1 && allUserSessions != null && allUserSessions.Any(s => s.SessionId == 1) ) {
+            return SessionDisplayStatus.Completed;
+        }
+
+        return SessionDisplayStatus.NotStarted; // По умолчанию
+    }
+
+
+    private void FilterDisplaySessions()
+    {
+        if (allUserSessions == null)
+        {
+            displaySessions = new List<SessionViewModel>();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            displaySessions = allUserSessions;
+        }
+        else
+        {
+            displaySessions = allUserSessions
+                .Where(s => s.SessionName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private void ShowResults(int sessionId)
+    {
+        Console.WriteLine($"Показать результаты для сессии {sessionId}");
+        // NavigationManager.NavigateTo($"/session-results/{sessionId}");
+    }
+
+    private void ContinueSession(int sessionId)
+    {
+        Console.WriteLine($"Продолжить сессию {sessionId}");
+        // NavigationManager.NavigateTo($"/test-session/{sessionId}"); // Или куда-то для продолжения
+    }
+
+    private void StartSession(int sessionId)
+    {
+        Console.WriteLine($"Начать сессию {sessionId}");
+        NavigationManager.NavigateTo($"/pre-test/{sessionId}"); // Как было в AdminPage
+    }
+}

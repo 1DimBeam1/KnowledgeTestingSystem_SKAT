@@ -1,0 +1,221 @@
+﻿@* Components/Pages/SessionResultsPage.razor *@
+@page "/session-results/{SessionId:int}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@inject NavigationManager NavigationManager
+@inject KnowledgeTestingSystem.Web.Services.EvaluationApiService EvaluationService
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ProtectedSessionStorage ProtectedSessionStore
+@using Microsoft.EntityFrameworkCore
+@using KnowledgeTestingSystem.Web.Auth
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+
+<PageTitle>Результаты Тестирования</PageTitle>
+
+<div class="results-container">
+    <h3>Результаты сессии тестирования №@SessionId</h3>
+
+    @if (isLoading)
+    {
+        <p><em>Загрузка результатов...</em></p>
+    }
+    else if (hasError)
+    {
+        <p class="text-danger">@errorMessage</p>
+        <button class="btn btn-primary mt-3" @onclick="GoToSessions">Вернуться к сессиям</button>
+    }
+    else
+    {
+        @if (FinalScore.HasValue)
+        {
+            <div class="score-section">
+                <p class="final-score-text">Вы прошли тестирование на: <strong>@FinalScore.Value.ToString("F0") баллов</strong>.</p>
+                <p class="grade-text">Ваша оценка предположительно: <strong>@GetGradeLetter(FinalScore.Value)</strong>.</p>
+            </div>
+
+            @if (SessionErrors != null && SessionErrors.Any())
+            {
+                <div class="errors-section mt-4">
+                    <h4>Обнаруженные ошибки (если это была обучающая сессия и были ошибки на последнем задании):</h4>
+                    <ul>
+                        @foreach (var error in SessionErrors)
+                        {
+                            <li>
+                                @if (error.Step.HasValue && error.Step > 0)
+                                {
+                                    <span>Шаг @error.Sequence (ориг. @error.Step), </span>
+                                }
+                                else if (error.Step == 0)
+                                {
+                                    <span>Шаг 0, </span>
+                                }
+                                @if (!string.IsNullOrEmpty(error.VariableName))
+                                {
+                                    <span>Переменная "@error.VariableName": </span>
+                                }
+                                @error.Message
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+            else if (ReasonForEnding == "timeout")
+            {
+                <p class="text-warning mt-3">Тестирование завершено по истечении времени.</p>
+            }
+            else if (ReasonForEnding == "manual_control_complete_no_errors")
+            {
+                <p class="text-success mt-3">Поздравляем, все задания в контрольной сессии выполнены корректно!</p>
+            }
+
+            <div class="mt-4">
+                <button class="btn btn-primary" @onclick="GoToSessions">К списку сессий</button>
+                @* Можно добавить кнопку "Посмотреть детальный отчет", если такой будет *@
+            </div>
+        }
+        else
+        {
+            <p><em>Не удалось получить итоговый балл для этой сессии.</em></p>
+            <button class="btn btn-primary mt-3" @onclick="GoToSessions">Вернуться к сессиям</button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int SessionId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reason")]
+    public string? ReasonForEnding { get; set; } // "timeout", "completed" и т.д.
+
+    private bool isLoading = true;
+    private bool hasError = false;
+    private string errorMessage = string.Empty;
+
+    private float? FinalScore { get; set; }
+    private List<ErrorDto>? SessionErrors { get; set; } // Ошибки, если они были переданы сюда
+
+    // Ключи для SessionStorage (те же, что в ActualTestPage)
+    private string SessionStateKeyBase => $"TestSessionState_{SessionId}";
+    private string CurrentGlobalTaskIndexKey => $"{SessionStateKeyBase}_GlobalTaskIndex";
+    private string TimeRemainingKey => $"{SessionStateKeyBase}_TimeRemaining";
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        var userIdString = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!int.TryParse(userIdString, out int currentUserId))
+        {
+            hasError = true;
+            errorMessage = "Не удалось определить пользователя.";
+            isLoading = false;
+            return;
+        }
+
+        // Пытаемся получить сохраненный результат из sessionStorage, если он был туда помещен
+        // на странице ActualTestPage перед редиректом.
+        // Это полезно, если вы не хотите делать еще один вызов API за уже полученным Score.
+        try
+        {
+            var scoreResult = await ProtectedSessionStore.GetAsync<float?>($"SessionScore_{SessionId}");
+            if (scoreResult.Success && scoreResult.Value.HasValue)
+            {
+                FinalScore = scoreResult.Value;
+                await ProtectedSessionStore.DeleteAsync($"SessionScore_{SessionId}_ForResultsPage");
+                Console.WriteLine($"Загружен Score={FinalScore} из sessionStorage.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка чтения из sessionStorage: {ex.Message}");
+            // Продолжаем, возможно, score не был сохранен или это был прямой переход
+        }
+
+
+        // Если Score не был получен из sessionStorage (например, прямой переход на страницу результатов
+        // или если мы всегда хотим запрашивать актуальный результат), то нужно его запросить.
+        // В вашем случае, API /Evaluation/upload используется для отправки ответов и получения оценки.
+        // Если у вас нет отдельного эндпоинта для ПОЛУЧЕНИЯ уже существующего результата,
+        // то логика немного усложняется. Предположим, что на этой странице мы в основном
+        // отображаем то, что было результатом ПОСЛЕДНЕЙ отправки (которая и привела сюда).
+        // В реальном приложении здесь мог бы быть запрос к БД за сохраненным результатом сессии.
+
+        if (!FinalScore.HasValue && ReasonForEnding != "manual_data_sent") // Если данные не были отправлены сюда через sessionStorage
+        {
+            // Если мы ожидаем, что оценка всегда происходит перед переходом сюда,
+            // а сейчас ее нет, это может быть ошибкой потока данных.
+            // В данном простом примере, если score не передан, покажем сообщение.
+            // В более сложном, можно попробовать запросить результат сессии из БД.
+            // hasError = true;
+            // errorMessage = "Результаты сессии не были переданы. Возможно, сессия еще не завершена или произошла ошибка.";
+            Console.WriteLine("FinalScore не был найден в sessionStorage. Отображаем то, что есть, или сообщение об ошибке, если ничего нет.");
+            // Если API вызывался из ActualTestPage и результат должен был быть сохранен,
+            // но не сохранился, это проблема.
+            // Для мока, если причина timeout, поставим score = 0
+            if (ReasonForEnding == "timeout" && !FinalScore.HasValue)
+            {
+                FinalScore = 0; // Или другой балл за незавершенную по времени сессию
+            }
+        }
+
+        // Очистка состояния сессии из ProtectedSessionStorage
+        await ClearSpecificSessionStateAsync();
+
+        isLoading = false;
+    }
+
+    private async Task ClearSpecificSessionStateAsync()
+    {
+        try
+        {
+            // Загружаем список ID заданий сессии, чтобы очистить их состояния
+            // (этот код можно вынести в сервис или сделать более общим)
+            var testIdsInSession = await Db.SessionTests
+                                        .Where(st => st.SessionId == SessionId)
+                                        .Select(st => st.TestId)
+                                        .ToListAsync();
+
+            foreach (var testId in testIdsInSession)
+            {
+                await ProtectedSessionStore.DeleteAsync($"{SessionStateKeyBase}_Task_{testId}");
+            }
+
+            await ProtectedSessionStore.DeleteAsync(CurrentGlobalTaskIndexKey);
+            await ProtectedSessionStore.DeleteAsync(TimeRemainingKey);
+            await ProtectedSessionStore.DeleteAsync($"SessionScore_{SessionId}"); // Очищаем и сохраненный Score
+            // await ProtectedSessionStore.DeleteAsync($"SessionErrors_{SessionId}");
+
+            Console.WriteLine($"Состояние для сессии {SessionId} очищено из sessionStorage.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка при очистке состояния сессии из sessionStorage: {ex.Message}");
+        }
+    }
+
+
+    private string GetGradeLetter(float score)
+    {
+        if (score >= 0 && score <= 60) return "2 (неудовлетворительно)";
+        if (score >= 61 && score <= 73) return "3 (удовлетворительно)";
+        if (score >= 74 && score <= 81) return "4 (хорошо)";
+        if (score >= 82 && score <= 100) return "5 (отлично)";
+        return "не определена";
+    }
+
+    private void GoToSessions()
+    {
+        NavigationManager.NavigateTo("/sessions"); // Страница со списком сессий
+    }
+}

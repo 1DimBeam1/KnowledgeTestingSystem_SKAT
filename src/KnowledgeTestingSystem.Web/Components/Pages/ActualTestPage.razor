@@ -1,0 +1,1769 @@
+﻿@* Componenta/Page/ActualTestPage.razor *@
+@page "/actual-test/{SessionId:int}"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext Db
+@inject ProtectedSessionStorage ProtectedSessionStore
+@inject EvaluationApiService EvaluationService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject KnowledgeTestingSystem.Web.Services.AlgorithmApiService AlgorithmService
+
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@implements IDisposable
+
+
+<PageTitle>Прохождение Тестирования</PageTitle>
+<div class="natp-container">
+    @if (isLoadingInitialData)
+    {
+        <div class="ptp-loading-indicator">
+            @* Используем старый класс, если стили уже есть, или переименуйте в natp- *@
+            <p>Загрузка данных сессии...</p>
+        </div>
+    }
+    else if (hasLoadingError)
+    {
+        <div class="ptp-loading-indicator">
+            <p class="text-danger">@loadingErrorMessage</p>
+            <button class="natp-button natp-button-back" @onclick="GoBackToSessions">Вернуться к списку сессий</button>
+        </div>
+    }
+    else
+    {
+        <!-- Верхняя панель с табами и таймером -->
+        <div class="natp-top-bar">
+            <div class="natp-tabs">
+                <button class="natp-tab-button" @onclick="GoBackToSessions">Главная (Сессии)</button>
+                @foreach (var taskItem in sessionTasks.Select((task, index) => new { task, index }))
+                {
+                    <button class="natp-tab-button @(taskItem.task.IsCurrent ? "active" : "")" @onclick="async () => await SetCurrentTask(taskItem.index)">
+                        Задание @(taskItem.index + 1)
+                    </button>
+                }
+            </div>
+            <div class="natp-time-remaining-display">
+                Времени осталось: <span>@timeRemainingDisplay</span>
+            </div>
+        </div>
+
+        <!-- Основной контент -->
+        <div class="natp-main-content-wrapper">
+            <!-- Центральная панель: Задание и Шаги Решения -->
+            <div class="natp-center-panel">
+                <div class="natp-task-description-header">
+                    <p><strong>Задание:</strong> @currentTaskFormulation</p>
+                    <p><strong>Начальные значения:</strong> @((MarkupString)InitialStateDescription)</p>
+                </div>
+
+                <div class="natp-solution-steps-area">
+
+                    @foreach (var instance in DisplayedStepInstances)
+                    {
+                        <div class="natp-step-entry @GetInstanceStatusClass(instance.Status)" @key="instance.InstanceId">
+
+                            @* Текстовая часть шага *@
+                            <div class="natp-step-text-wrapper">
+                                <div class="natp-step-text">
+                                    <span class="natp-step-display-order">@instance.DisplayOrder.</span> @* Порядковый номер ввода *@
+                                    <span class="natp-step-title-prefix">Шаг</span>
+                                    <span class="natp-step-algo-number">"@instance.DisplayStepNumberFromAlgo"</span> @* Номер из описания *@
+                                    <span class="natp-step-description-inline">"@instance.Description"</span> @* Описание шага *@
+                                </div>
+                                @if (!string.IsNullOrEmpty(instance.ErrorMessageForUI))
+                                {
+                                    <span class="natp-step-error-indicator" title="@instance.ErrorMessageForUI">ℹ️</span>
+                                }
+                            </div>
+                            <div class="natp-step-inputs">
+                                @foreach (var userInput in instance.UserInputs)
+                                {
+                                    <div class="atp-variable-input-container @GetInstanceStatusClass(userInput.Status)">
+                                        <label class="atp-variable-label">@userInput.Label</label>
+                                        @if (userInput.IsArray && !userInput.IsTwoDimensional)
+                                        {
+                                            <div class="atp-array-input-cells">
+                                                @for (int i = 0; i < userInput.ArrayLength; i++)
+                                                {
+                                                    var cellIndex = i;
+                                                    <input type="text" class="atp-array-cell"
+                                                    placeholder="эл.@(cellIndex+1)"
+                                                    value="@userInput.ArrayCellValues[cellIndex]"
+                                                    @oninput="@(async (ChangeEventArgs e) => { userInput.ArrayCellValues[cellIndex] = e.Value?.ToString(); await HandleInputChange(); })" />
+                                                }
+                                            </div>
+                                        }
+                                        else if (userInput.IsArray && userInput.IsTwoDimensional)
+                                        {
+                                            <div class="atp-2d-array-input-cells">
+                                                @if (userInput.TwoDArrayCellValues != null)
+                                                {
+                                                    <table>
+                                                        <tbody>
+                                                            @for (int r = 0; r < userInput.ArrayRows; r++)
+                                                            {
+                                                                var rowIndex = r; // Захват переменной для лямбды
+                                                                <tr>
+                                                                    @for (int c = 0; c < userInput.ArrayCols; c++)
+                                                                    {
+                                                                        var colIndex = c; // Захват переменной для лямбды
+                                                                        <td>
+                                                                            <input type="text" class="atp-array-cell"
+                                                                            placeholder="@($"[{rowIndex},{colIndex}]")"
+                                                                            value="@userInput.TwoDArrayCellValues[rowIndex][colIndex]"
+                                                                            @oninput="@(async (ChangeEventArgs e) => { userInput.TwoDArrayCellValues[rowIndex][colIndex] = e.Value?.ToString(); await HandleInputChange(); })" />
+                                                                        </td>
+                                                                    }
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <input type="text" class="atp-single-value-input"
+                                            value="@userInput.CurrentValue"
+                                            @oninput="@(async (ChangeEventArgs e) => { userInput.CurrentValue = e.Value?.ToString(); await HandleInputChange(); })"
+                                            placeholder="@userInput.PlaceholderText" />
+                                        }
+                                        @if (!string.IsNullOrEmpty(userInput.ErrorMessageForUI))
+                                        {
+                                            <span class="atp-input-error-message text-danger">@userInput.ErrorMessageForUI</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="natp-step-actions">
+                                <button class="natp-step-remove" @onclick="async () => await RemoveStepInstance(instance)" title="Удалить этот шаг">X</button>
+                                @if (currentTask != null && currentTask.AlgorithmSteps.Any(s => s.OriginalStepNumberInDb != 0))
+                                {
+                                    @foreach (var algoStepTemplate in currentTask.AlgorithmSteps.Where(s => s.OriginalStepNumberInDb != 0))
+                                    {
+                                        <button class="natp-step-type-button"
+                                        @onclick="() => AddNextStepInstance(instance, algoStepTemplate)">
+                                            @algoStepTemplate.DisplayStepNumber
+                                        </button>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (!DisplayedStepInstances.Any() && currentTask != null && currentTask.AlgorithmSteps.Any(s => s.OriginalStepNumberInDb != 0))
+                    {
+                        <div class="natp-add-first-step-prompt">
+                            <span>Выберите первый шаг:</span>
+                            @foreach (var algoStepTemplate in currentTask.AlgorithmSteps.Where(s => s.OriginalStepNumberInDb != 0))
+                            {
+                                <button class="natp-step-type-button"
+                                @onclick="() => AddNextStepInstance(null, algoStepTemplate)">
+                                    @algoStepTemplate.DisplayStepNumber
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Правая Колонка: Изображение, Описание шагов, Кнопки -->
+            <div class="natp-right-panel">
+                <div class="natp-image-container">
+                    @if (!string.IsNullOrEmpty(taskImageUrl))
+                    {
+                        <img src="@taskImageUrl" alt="Отслеживаемые переменные: @(currentTask?.AlgorithmName)" />
+                    }
+                    else
+                    {
+                        <span>Изображение алгоритма</span>
+                    }
+                </div>
+                <div class="natp-algorithm-steps-description">
+                    <div class="natp-panel-title">Описание шагов алгоритма</div>
+                    <div class="natp-steps-list-content">
+                        @if (currentTask != null && currentTask.AlgorithmSteps.Any())
+                        {
+                            @foreach (var step in currentTask.AlgorithmSteps.Where(s => s.OriginalStepNumberInDb != 0))
+                            {
+                                <div class="natp-algo-step-item" title="@step.ParsedDescription">
+                                    Шаг @step.DisplayStepNumber: @step.ParsedDescription
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <p>Нет описания шагов.</p>
+                        }
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(fieldValidationErrorMessage))
+                {
+                    <div class="alert alert-warning natp-validation-summary">@fieldValidationErrorMessage</div>
+                }
+                <div class="natp-action-buttons-panel">
+                    @if (currentTestMode == PreTestPage.TestMode.Training)
+                    {
+                        <button class="natp-button natp-check-button" @onclick="CheckCurrentTaskSolutionAsync" disabled="@IsProcessingAction">
+                            @if (IsCheckingSolution)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            } Проверить
+                        </button>
+                    }
+                    <button class="natp-button natp-next-button" @onclick="GoToNextTaskOrFinishSession" disabled="@IsProcessingAction">
+                        @nextButtonText
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+
+@code {
+    private bool IsProcessingAction = false;    
+    private string? fieldValidationErrorMessage;
+
+    [Parameter]
+    public int SessionId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? ModeString { get; set; }
+
+    private bool IsCheckingSolution = false;
+
+    // --- Состояние загрузки и ошибок ---
+    private bool isLoadingInitialData = true;
+    private bool hasLoadingError = false;
+    private string loadingErrorMessage = string.Empty;
+
+    private string AllTasksStateKey => $"{SessionStateKeyBase}_AllTasksStates";
+    private AllTasksSessionState currentSessionFullState = new AllTasksSessionState();
+    private EvaluationResponseDto? lastEvaluationResult;
+    // --- Данные сессии и заданий ---
+    private string sessionTitle = "Загрузка...";
+    private TimeSpan sessionTimeLimit;
+    private List<SessionTaskInfo> sessionTasks = new List<SessionTaskInfo>();
+    private SessionTaskInfo? currentTask;
+    private int currentTaskIndex = 0; // Будет восстанавливаться
+
+    // --- Данные текущего задания ---
+    private string currentTaskFormulation = "Загрузка описания задания...";
+    private string? taskImageUrl = null;
+    private string InitialStateDescription { get; set; } = string.Empty; // Для Шага 0 (текст + известные значения)
+    //private List<VariableInputData> StepZeroUserInputs { get; set; } = new List<VariableInputData>(); // Поля для ввода Шага 0
+
+    // --- Режим тестирования и подсказки ---
+    private PreTestPage.TestMode currentTestMode = PreTestPage.TestMode.Training;
+    private bool showHints = true;
+    private string currentHint = "Здесь будет подсказка..."; // TODO: Загружать подсказки для задания
+
+    // --- Таймер ---
+    private string timeRemainingDisplay = "00:00:00";
+    private System.Threading.Timer? _timer;
+    private int _totalSecondsRemaining; // Будет восстанавливаться
+
+    // --- Интерактивные шаги ---
+    private List<ActiveStepInstance> DisplayedStepInstances { get; set; } = new List<ActiveStepInstance>();
+
+    // --- Текст кнопки "Далее" ---
+    private string nextButtonText = "Следующее задание";
+
+    // --- Ключи для SessionStorage ---
+    private string SessionStateKeyBase => $"TestSessionData_{SessionId}"; // Общий префикс
+    // Ключи для данных, которые нужны ВО ВРЕМЯ прохождения сессии
+    private string CurrentGlobalTaskIndexKey => $"{SessionStateKeyBase}_GlobalTaskIndex";
+    private string TimeRemainingKey => $"{SessionStateKeyBase}_TimeRemaining";
+    private string TaskSpecificStateKey(int testId) => $"{SessionStateKeyBase}_Task_{testId}_State"; // Состояние для конкретного задания
+
+    // Ключ ТОЛЬКО для итоговой оценки (сохраняется при завершении)
+    private string FinalScoreKey => $"SessionScore_{SessionId}";
+
+    // --- Модель для сохранения состояния в SessionStorage ---
+    public class TestSessionTaskState // Состояние для ОДНОГО задания
+    {
+        public List<ActiveStepInstance> DisplayedSteps { get; set; } = new List<ActiveStepInstance>();
+        public List<VariableInputData> StepZeroInputs { get; set; } = new List<VariableInputData>();
+    }
+
+    // --- ViewModel классы (остаются без изменений из предыдущего ответа) ---
+    public enum StepStatus { Pending, Correct, Incorrect, NotChecked, Submitted }
+    public class VariableTemplate { public string Name { get; set; } = string.Empty; public string Label => $"{Name} ="; public bool IsWide { get; set; } public string PlaceholderText { get; set; } = ""; }
+    // StepTemplateModel можно удалить, если кнопки генерируются из AlgorithmStepInfo
+    // public class StepTemplateModel { public int StepNumber { get; set; } public string Title => $"Шаг {StepNumber}."; public List<VariableTemplate> Variables { get; set; } = new List<VariableTemplate>(); public string InitialDescription { get; set; } = string.Empty; }
+    public class AllTasksSessionState
+    {
+        // Словарь: TestId -> Состояние этого задания
+        public Dictionary<int, TestSessionTaskState> TaskStates { get; set; } = new Dictionary<int, TestSessionTaskState>();
+        public int CurrentGlobalTaskIndex { get; set; } = 0;
+        public int TimeRemainingSeconds { get; set; } = 0;
+    }
+
+    public class ActiveStepInstance : IEquatable<ActiveStepInstance>
+    {
+        public Guid InstanceId { get; } // Убираем = Guid.NewGuid();
+        public ActiveStepInstance() { InstanceId = Guid.NewGuid(); } // Конструктор по умолчанию
+        public ActiveStepInstance(Guid id) { InstanceId = id; }
+        public int OriginalStepNumber { get; set; } // Номер шага из шаблона/алгоритма
+        public string Description { get; set; } = string.Empty;
+        public List<VariableInputData> UserInputs { get; set; } = new List<VariableInputData>();
+        public StepStatus Status { get; set; } = StepStatus.NotChecked;
+
+        // --- НОВОЕ СВОЙСТВО ---
+        public int DisplayOrder { get; set; } // Порядковый номер отображения
+        public string DisplayStepNumberFromAlgo { get; set; } = string.Empty;
+        public string? ErrorMessageForUI { get; set; }
+        public bool Equals(ActiveStepInstance? other)
+        {
+            if (other is null) return false;
+            return InstanceId.Equals(other.InstanceId);
+        }
+        public override bool Equals(object? obj) => Equals(obj as ActiveStepInstance);
+        public override int GetHashCode() => InstanceId.GetHashCode();
+    }
+    public class VariableInputData // Данные для конкретного поля ввода в UI
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Label => $"{Name} =";
+        public string? CurrentValue { get; set; } // Для не-массивов или если массив вводится как строка "1,2,3"
+
+        public bool IsArray { get; set; } // Флаг, что это массив
+        // Для одномерного массива:
+        public List<string?> ArrayCellValues { get; set; } = new List<string?>();
+        public int ArrayLength { get; set; } // Фиксированная длина одномерного массива
+
+        // Для двумерного массива (если будете реализовывать):
+        public List<List<string?>>? TwoDArrayCellValues { get; set; }
+        public int ArrayRows { get; set; }
+        public int ArrayCols { get; set; }
+        public bool IsTwoDimensional { get; set; }
+
+        public int MaxCellsPerDimension { get; set; } = 15; // Общее ограничение на размерность
+        public string PlaceholderText { get; set; } = "";
+        public StepStatus Status { get; set; } = StepStatus.NotChecked;
+        public string? ErrorMessageForUI { get; set; }
+    }
+
+    public class TrackedVariableInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty; // e.g., "int", "string", "int[]", "array", "array[rows,cols]"
+        public string Label => $"{Name} =";
+        public bool IsArrayType => Type.Contains("[]") || Type.StartsWith("array", StringComparison.OrdinalIgnoreCase);
+
+        // Размеры для массивов (могут быть определены из VarType или TestInputData)
+        public int ArrayDimension1Size { get; set; } = 0; // Для одномерного - длина, для двумерного - строки
+        public int ArrayDimension2Size { get; set; } = 0; // Для двумерного - столбцы (0 если одномерный)
+        public bool IsTwoDimensionalArray => IsArrayType && ArrayDimension2Size > 0;
+
+        public string PlaceholderTextSingle => IsArrayType ? "эл." : "";
+    }
+
+    public class AlgorithmStepInfo
+    {
+        public int OriginalStepNumberInDb { get; set; } // Это AlgoStep из БД (порядковый номер из таблицы)
+        public string FullDescriptionFromDb { get; set; } = string.Empty; // Исходное Description из Algorithmstep
+
+        // --- НОВЫЕ ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ---
+        private string _parsedDescription = string.Empty;
+        public string ParsedDescription
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_parsedDescription) && !string.IsNullOrEmpty(FullDescriptionFromDb))
+                {
+                    ParseFullDescription();
+                }
+                return _parsedDescription;
+            }
+        }
+
+        private string? _displayStepNumber; // Номер, который будет на кнопке (может быть строкой "1.1", "А" и т.д.)
+        public string DisplayStepNumber
+        {
+            get
+            {
+                if (_displayStepNumber == null && !string.IsNullOrEmpty(FullDescriptionFromDb))
+                {
+                    ParseFullDescription();
+                }
+                // Если не распарсился, используем оригинальный номер шага из БД
+                return _displayStepNumber ?? OriginalStepNumberInDb.ToString();
+            }
+        }
+
+        public string Title => $"Шаг {DisplayStepNumber}";
+
+        public List<TrackedVariableInfo> VariablesToTrack { get; set; } = new List<TrackedVariableInfo>();
+
+        private void ParseFullDescription()
+        {
+            if (string.IsNullOrEmpty(FullDescriptionFromDb))
+            {
+                _parsedDescription = string.Empty;
+                _displayStepNumber = OriginalStepNumberInDb.ToString(); // По умолчанию, если описание пустое
+                return;
+            }
+
+            var parts = FullDescriptionFromDb.Split(new[] { ';' }, 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2)
+            {
+                _parsedDescription = parts[0].Trim();
+                _displayStepNumber = parts[1].Trim();
+            }
+            else if (parts.Length == 1)
+            {
+                _parsedDescription = parts[0].Trim();
+                // Если номер не найден после ';', используем OriginalStepNumberInDb
+                _displayStepNumber = OriginalStepNumberInDb.ToString();
+            }
+            else // Пустая строка или только ';'
+            {
+                _parsedDescription = FullDescriptionFromDb; // Оставляем как есть
+                _displayStepNumber = OriginalStepNumberInDb.ToString();
+            }
+        }
+    }
+
+    public class SessionTaskInfo
+    {
+        public int TestId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        //public string? AlgorithmImagePath { get; set; }
+        public bool IsCurrent { get; set; }
+        public int AlgorithmId { get; set; }
+        public string AlgorithmName { get; set; } = string.Empty;
+        public List<AlgorithmStepInfo> AlgorithmSteps { get; set; } = new List<AlgorithmStepInfo>();
+        public string TaskInitialStateDescription { get; set; } = string.Empty; // Сформированное описание Шага 0
+        public Dictionary<string, string> InputDataValues { get; set; } = new Dictionary<string, string>(); // TestInputData для этого теста
+    }
+
+    // --- Методы жизненного цикла ---
+    protected override async Task OnInitializedAsync()
+    {
+        // Загрузка данных перенесена в OnParametersSetAsync, так как зависит от SessionId
+        await Task.CompletedTask;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoadingInitialData = true;
+        hasLoadingError = false;
+        loadingErrorMessage = string.Empty;
+        // StateHasChanged(); // Вызовется в конце или при await
+
+        ParseModeFromQueryString();
+        showHints = currentTestMode == PreTestPage.TestMode.Training;
+
+        // Загружаем основные данные сессии и заданий, только если они еще не загружены или SessionId изменился
+        // Для простоты будем перезагружать, если SessionId изменился (хотя он параметр пути и не должен меняться без перезагрузки компонента)
+        // Но если это возможно, нужна более сложная логика отслеживания.
+        // Пока что, если sessionTasks пуст, значит это первая загрузка.
+        if (!sessionTasks.Any() || (currentTask != null && currentTask.TestId == 0)) // Проверка, что данные еще не загружены
+        {
+            await LoadSessionAndTasksDataAsync();
+        }
+
+
+        if (!hasLoadingError)
+        {
+            await RestoreFullSessionStateAsync(); // Восстанавливаем индекс задания и время
+
+            if (sessionTasks.Any())
+            {
+                currentTaskIndex = Math.Clamp(currentTaskIndex, 0, sessionTasks.Count - 1); // Убедимся, что индекс валиден
+                await SetCurrentTask(currentTaskIndex, true); // true - initial setup
+            }
+            else
+            {
+                currentTaskFormulation = "В этой сессии нет заданий.";
+                nextButtonText = "Вернуться к списку сессий";
+            }
+
+            // Таймер
+            if (_timer == null && _totalSecondsRemaining > 0)
+            {
+                InitializeAndStartTimer(false); // false - используем восстановленное время
+            }
+            else if (_timer == null && sessionTimeLimit > TimeSpan.Zero && _totalSecondsRemaining <= 0)
+            {
+                InitializeAndStartTimer(true); // true - используем полное время сессии
+            }
+            else if (sessionTimeLimit == TimeSpan.Zero)
+            {
+                timeRemainingDisplay = "Без ограничений";
+            }
+        }
+        isLoadingInitialData = false;
+        //await base.OnParametersSetAsync();
+    }
+
+    // Восстанавливаем состояние, если сессия была прервана
+    private async Task RestoreInProgressSessionStateAsync()
+    {
+        try
+        {
+            var taskIndexResult = await ProtectedSessionStore.GetAsync<int>(CurrentGlobalTaskIndexKey);
+            currentTaskIndex = taskIndexResult.Success ? taskIndexResult.Value : 0;
+
+            var timeResult = await ProtectedSessionStore.GetAsync<int>(TimeRemainingKey);
+            // Если время не найдено в хранилище, берем полное время сессии
+            _totalSecondsRemaining = timeResult.Success ? timeResult.Value : (int)sessionTimeLimit.TotalSeconds;
+            UpdateTimeRemainingDisplay();
+            Console.WriteLine($"Состояние прогресса восстановлено: TaskIndex={currentTaskIndex}, TimeRemaining={_totalSecondsRemaining}s");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка восстановления состояния прогресса: {ex.Message}. Начинаем с начала.");
+            currentTaskIndex = 0;
+            _totalSecondsRemaining = (int)sessionTimeLimit.TotalSeconds;
+            UpdateTimeRemainingDisplay();
+        }
+    }
+
+    private async Task SaveCurrentTaskProgressAsync()
+    {
+        if (currentTask == null || IsProcessingAction) return; // Не сохраняем во время других действий
+        try
+        {
+            var state = new TestSessionTaskState
+                {
+                //StepZeroInputs = StepZeroUserInputs.Select(CloneVariableInputData).ToList(),
+                    DisplayedSteps = DisplayedStepInstances.Select(CloneActiveStepInstance).ToList()
+                };
+            await ProtectedSessionStore.SetAsync(TaskSpecificStateKey(currentTask.TestId), state);
+            Console.WriteLine($"Прогресс для задания {currentTask.TestId} сохранен.");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения прогресса задания {currentTask.TestId}: {ex.Message}"); }
+    }
+
+    // Сохраняем глобальное состояние (индекс задания, время)
+    private async Task SaveGlobalProgressAsync()
+    {
+        if (IsProcessingAction) return;
+        try
+        {
+            await ProtectedSessionStore.SetAsync(CurrentGlobalTaskIndexKey, currentTaskIndex);
+            await ProtectedSessionStore.SetAsync(TimeRemainingKey, _totalSecondsRemaining);
+            Console.WriteLine("Глобальный прогресс сессии сохранен.");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения глобального прогресса: {ex.Message}"); }
+    }
+
+    private void ParseModeFromQueryString()
+    {
+        if (!string.IsNullOrEmpty(ModeString) && Enum.TryParse<PreTestPage.TestMode>(ModeString, true, out var parsedMode))
+        {
+            currentTestMode = parsedMode;
+        }
+        else
+        {
+            currentTestMode = PreTestPage.TestMode.Training; // По умолчанию
+        }
+    }
+
+    private async Task LoadSessionAndTasksDataAsync()
+    {
+        // ... (код LoadSessionAndTasksDataAsync из предыдущего ответа, он корректен) ...
+        // ВАЖНО: убедитесь, что внутри него при маппинге в SessionTaskInfo
+        // для TaskInitialStateDescription и AlgorithmSteps.VariablesToTrack
+        // вы используете `currentTestInputData` для определения, какие переменные уже имеют значения.
+        // И что `TaskInitialStateDescription` формируется правильно с учетом этого.
+        // Также, что `InputDataValues` сохраняется в `SessionTaskInfo`.
+        try
+        {
+            var session = await Db.Sessions.FirstOrDefaultAsync(s => s.SessionId == SessionId);
+            if (session == null) { loadingErrorMessage = $"Сессия {SessionId} не найдена."; hasLoadingError = true; return; }
+            sessionTitle = $"Тестирование: {(session.SessionType?.ToString() ?? "N/A")} (ID: {SessionId})";
+            sessionTimeLimit = session.Time;
+
+            var testIdsInSession = await Db.SessionTests
+                                        .Where(st => st.SessionId == SessionId)
+                                        .Select(st => st.TestId).ToListAsync();
+            if (!testIdsInSession.Any()) { sessionTasks = new List<SessionTaskInfo>(); currentTaskFormulation = "В этой сессии нет заданий."; return; }
+
+            var allInputDataForSessionTests = await Db.TestInputData
+                                                .Where(tid => testIdsInSession.Contains(tid.TestId)).ToListAsync();
+
+            var testsFromDb = await Db.Tests
+                .Include(t => t.Algo).ThenInclude(a => a.AlgorithmSteps).ThenInclude(astep => astep.TrackedVariables)
+                .Where(t => testIdsInSession.Contains(t.TestId)).ToListAsync();
+
+            sessionTasks = testsFromDb.Select(t =>
+            {
+                var currentTestInputDataMap = allInputDataForSessionTests
+                                           .Where(tid => tid.TestId == t.TestId)
+                                           .ToDictionary(tid => tid.VarName, tid => tid); // Словарь Testinputdatum
+
+                var algoSteps = t.Algo?.AlgorithmSteps
+                .OrderBy(s => s.AlgoStep)
+                .Select(s =>
+                {
+                    var stepInfo = new AlgorithmStepInfo
+                        {
+                            OriginalStepNumberInDb = s.AlgoStep,       // Используем новое имя
+                            FullDescriptionFromDb = s.Description,
+                            VariablesToTrack = s.TrackedVariables
+                                    .OrderBy(tv => tv.Sequence)
+                                    .Select(tv =>
+                                    {
+                                        var trackedVarInfo = new TrackedVariableInfo
+                                        {
+                                            Name = tv.VarName,
+                                            Type = tv.VarType // e.g., "int", "int[]", "array", "array[rows,cols]"
+                                        };
+
+                                        // Пытаемся определить размер массива из Testinputdata или из типа
+                                        if (trackedVarInfo.IsArrayType)
+                                        {
+                                            if (currentTestInputDataMap.TryGetValue(tv.VarName, out var inputDataForVar))
+                                            {
+                                                // Парсим VarValue для определения размеров
+                                                // Пример для одномерного: "1,2,3,4,5"
+                                                // Пример для двумерного: "1,2;3,4;5,6"
+                                                var parts = inputDataForVar.VarValue.Split(';');
+                                                if (parts.Length > 1) // Похоже на двумерный
+                                                {
+                                                    trackedVarInfo.ArrayDimension1Size = Math.Min(parts.Length, 15); // Кол-во строк
+                                                    if (parts.Length > 0)
+                                                    {
+                                                        trackedVarInfo.ArrayDimension2Size = Math.Min(parts[0].Split(',').Length, 15); // Кол-во столбцов по первой строке
+                                                    }
+                                                }
+                                                else // Одномерный
+                                                {
+                                                    trackedVarInfo.ArrayDimension1Size = Math.Min(parts[0].Split(',').Length, 15);
+                                                    trackedVarInfo.ArrayDimension2Size = 0;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // Если нет входных данных, пытаемся извлечь из типа, например "int[5]" или "array[5,3]"
+                                                // Это более сложный парсинг, для простоты пока оставим дефолтные значения или 0
+                                                // Для примера, если тип "int[N]", то N - это размер
+                                                // string typeDef = tv.VarType.ToLower();
+                                                // if (typeDef.StartsWith("array[") && typeDef.EndsWith("]")) { ... парсинг ... }
+                                                // else if (typeDef.EndsWith("[]")) { ... }
+                                                trackedVarInfo.ArrayDimension1Size = 5; // Заглушка, если нет в TestInputData
+                                            }
+                                        }
+                                        return trackedVarInfo;
+                                    }).ToList()
+                        };
+                    return stepInfo;
+                }).ToList() ?? new List<AlgorithmStepInfo>();
+
+                string initialStateDesc;
+                var stepZero = algoSteps.FirstOrDefault(s => s.OriginalStepNumberInDb == 0);
+                // if (stepZero != null)
+                // {
+                //     initialStateDesc = $"Шаг 0: {stepZero.ParsedDescription}\nНачальные значения:\n";
+                //     if (stepZero.VariablesToTrack.Any())
+                //     {
+                //         foreach (var variable in stepZero.VariablesToTrack)
+                //         {
+                //             if (currentTestInputDataMap.TryGetValue(variable.Name, out var inputInfo))
+                //             {
+                //                 initialStateDesc += $"{variable.Name} = {inputInfo.VarValue}\n";
+                //             }
+                //             else { initialStateDesc += $"{variable.Name} = (введите значение)\n"; }
+                //         }
+                //     }
+                //     else { initialStateDesc += "(Нет отслеживаемых переменных для Шага 0)\n"; }
+                // }
+                // else
+                // {
+                initialStateDesc = " ";
+                if (currentTestInputDataMap.Any()) { foreach (var entry in currentTestInputDataMap) { initialStateDesc += $"{entry.Key} = {entry.Value.VarValue}\n"; } }
+                else { initialStateDesc += "(Входные данные не указаны)\n"; }
+                //}
+
+                return new SessionTaskInfo
+                    {
+                        TestId = t.TestId,
+                        Name = t.TestName,
+                        Description = t.Description,
+                    //AlgorithmImagePath = t.Algo?.PicPath,
+                        IsCurrent = false,
+                        AlgorithmId = t.AlgoId,
+                        AlgorithmName = t.Algo?.AlgoName ?? "Неизвестный алгоритм",
+                        AlgorithmSteps = algoSteps,
+                        InputDataValues = currentTestInputDataMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.VarValue),
+                        TaskInitialStateDescription = initialStateDesc.TrimEnd()
+                    };
+            }).ToList();
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка загрузки: {ex.Message} \n {ex.StackTrace}"); loadingErrorMessage = "Ошибка загрузки."; hasLoadingError = true; }
+    }
+
+
+    private async Task RestoreGlobalStateAsync()
+    {
+        try
+        {
+            var taskIndexResult = await ProtectedSessionStore.GetAsync<int>(CurrentGlobalTaskIndexKey);
+            currentTaskIndex = taskIndexResult.Success ? taskIndexResult.Value : 0;
+
+            var timeResult = await ProtectedSessionStore.GetAsync<int>(TimeRemainingKey);
+            _totalSecondsRemaining = timeResult.Success ? timeResult.Value : (int)sessionTimeLimit.TotalSeconds;
+            UpdateTimeRemainingDisplay();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка восстановления глобального состояния: {ex.Message}");
+            currentTaskIndex = 0;
+            _totalSecondsRemaining = (int)sessionTimeLimit.TotalSeconds; // Сброс на полное время
+        }
+    }
+
+    private async Task RestoreTaskSpecificStateAsync()
+    {
+        //StepZeroUserInputs.Clear();
+        DisplayedStepInstances.Clear();
+
+        if (currentTask == null) return;
+
+        try
+        {
+            var stateResult = await ProtectedSessionStore.GetAsync<TestSessionTaskState>(TaskSpecificStateKey(currentTask.TestId));
+            if (stateResult.Success && stateResult.Value != null)
+            {
+                //StepZeroUserInputs = stateResult.Value.StepZeroInputs ?? new List<VariableInputData>();
+                DisplayedStepInstances = stateResult.Value.DisplayedSteps ?? new List<ActiveStepInstance>();
+                Console.WriteLine($"Состояние восстановлено для задания {currentTask.TestId}");
+            }
+            else // Если нет сохраненного состояния, инициализируем StepZeroInputs
+            {
+                InitializeStepZeroInputsForCurrentTask();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка восстановления состояния для задания {currentTask.TestId}: {ex.Message}");
+            InitializeStepZeroInputsForCurrentTask(); // Инициализация при ошибке
+        }
+    }
+
+    private void InitializeStepZeroInputsForCurrentTask()
+    {
+        //StepZeroUserInputs.Clear();
+        if (currentTask == null) return;
+
+        var stepZeroTemplate = currentTask.AlgorithmSteps.FirstOrDefault(s => s.OriginalStepNumberInDb == 0);
+        if (stepZeroTemplate != null)
+        {
+            foreach (var variableInfo in stepZeroTemplate.VariablesToTrack)
+            {
+                // Переменная для Шага 0 требует ввода, если ее нет в TestInputData ИЛИ если ее значение там было пустым/специальным маркером
+                // Для простоты, если ее нет в InputDataValues (которые мы сохранили в SessionTaskInfo)
+                if (!currentTask.InputDataValues.ContainsKey(variableInfo.Name))
+                {
+                    var inputDataItem = new VariableInputData
+                        {
+                            Name = variableInfo.Name,
+                            IsArray = variableInfo.IsArrayType,
+                            IsTwoDimensional = variableInfo.IsTwoDimensionalArray,
+                        };
+
+                    if (variableInfo.IsArrayType)
+                    {
+                        if (variableInfo.IsTwoDimensionalArray)
+                        {
+                            // Логика для двумерного (пока не используется в разметке)
+                            inputDataItem.ArrayRows = Math.Max(1, variableInfo.ArrayDimension1Size); // хотя бы 1, если размер 0
+                            inputDataItem.ArrayCols = Math.Max(1, variableInfo.ArrayDimension2Size);
+                            inputDataItem.TwoDArrayCellValues = new List<List<string?>>();
+                            for (int r = 0; r < inputDataItem.ArrayRows; r++)
+                            {
+                                inputDataItem.TwoDArrayCellValues.Add(new List<string?>(new string?[inputDataItem.ArrayCols]));
+                            }
+                        }
+                        else // Одномерный
+                        {
+                            inputDataItem.ArrayLength = Math.Max(1, variableInfo.ArrayDimension1Size); // хотя бы 1
+                            inputDataItem.ArrayCellValues = new List<string?>(new string?[inputDataItem.ArrayLength]);
+                        }
+                    }
+                    //StepZeroUserInputs.Add(inputDataItem);
+                }
+            }
+        }
+    }
+
+    private void SaveCurrentTaskStateToFullState()
+    {
+        if (currentTask == null) return;
+        if (!currentSessionFullState.TaskStates.ContainsKey(currentTask.TestId))
+        {
+            currentSessionFullState.TaskStates[currentTask.TestId] = new TestSessionTaskState();
+        }
+        //currentSessionFullState.TaskStates[currentTask.TestId].StepZeroInputs = new List<VariableInputData>(StepZeroUserInputs.Select(CloneVariableInputData));
+        currentSessionFullState.TaskStates[currentTask.TestId].DisplayedSteps = new List<ActiveStepInstance>(DisplayedStepInstances.Select(CloneActiveStepInstance));
+    }
+
+    private async Task SaveTaskSpecificStateAsync()
+    {
+        if (currentTask == null) return;
+        try
+        {
+            var state = new TestSessionTaskState
+                {
+                //StepZeroInputs = StepZeroUserInputs,
+                    DisplayedSteps = DisplayedStepInstances
+                };
+            await ProtectedSessionStore.SetAsync(TaskSpecificStateKey(currentTask.TestId), state);
+            Console.WriteLine($"Состояние задания {currentTask.TestId} сохранено.");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения состояния задания: {ex.Message}"); }
+    }
+
+    private async Task SaveGlobalStateAsync() // Для индекса и времени
+    {
+        try
+        {
+            await ProtectedSessionStore.SetAsync(CurrentGlobalTaskIndexKey, currentTaskIndex);
+            await ProtectedSessionStore.SetAsync(TimeRemainingKey, _totalSecondsRemaining);
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения глобального состояния: {ex.Message}"); }
+    }
+
+    private async Task HandleInputChange()
+    {
+        await SaveCurrentTaskProgressAsync();
+    }
+
+    private Dictionary<int, string?> algorithmImageCache = new Dictionary<int, string?>();
+
+    private async Task SetCurrentTask(int index, bool initialSetup = false)
+    {
+        if (sessionTasks == null || !sessionTasks.Any()) { /* ... */ return; }
+        if (index < 0) index = 0;
+        if (index >= sessionTasks.Count) index = sessionTasks.Count - 1;
+
+        // Если это не первоначальная установка и задание то же самое, ничего не делаем
+        if (!initialSetup && currentTask != null && currentTask.TestId == sessionTasks[index].TestId && currentTaskIndex == index) return;
+        if (!initialSetup && currentTask != null) // Не сохраняем при самой первой установке из OnParametersSetAsync
+        {
+            SaveCurrentTaskStateToFullState(); // Сохраняем данные уходящего задания
+            await SaveFullSessionStateAsync(); // Сохраняем весь стейт в SessionStorage
+        }
+        currentTaskIndex = index;
+        currentTask = sessionTasks[index];
+
+        for (int i = 0; i < sessionTasks.Count; i++) sessionTasks[i].IsCurrent = (i == index);
+
+        currentTaskFormulation = currentTask.Description;
+        taskImageUrl = null;
+        InitialStateDescription = currentTask.TaskInitialStateDescription;
+
+        if (currentTask != null)
+        {
+            // Загружаем или берем из кэша изображение алгоритма
+            if (algorithmImageCache.TryGetValue(currentTask.AlgorithmId, out var cachedUrl))
+            {
+                taskImageUrl = cachedUrl;
+                Console.WriteLine($"Изображение для AlgoId {currentTask.AlgorithmId} взято из кэша.");
+            }
+            else
+            {
+                Console.WriteLine($"Запрос изображения для AlgoId {currentTask.AlgorithmId}...");
+                taskImageUrl = await AlgorithmService.GetAlgorithmPictureUrlAsync(currentTask.AlgorithmId);
+                if (taskImageUrl != null)
+                {
+                    algorithmImageCache[currentTask.AlgorithmId] = taskImageUrl;
+                    Console.WriteLine($"Изображение для AlgoId {currentTask.AlgorithmId} загружено и закэшировано.");
+                }
+                else
+                {
+                    algorithmImageCache[currentTask.AlgorithmId] = null; // Кэшируем факт отсутствия, чтобы не запрашивать снова
+                    Console.WriteLine($"Не удалось загрузить изображение для AlgoId {currentTask.AlgorithmId}.");
+                }
+            }
+
+            //StepZeroUserInputs.Clear();
+            DisplayedStepInstances.Clear();
+            //StepZeroOverallStatus = StepStatus.NotChecked;
+            //StepZeroErrorMessage = null;
+
+            try
+            {
+                var stateResult = await ProtectedSessionStore.GetAsync<TestSessionTaskState>(TaskSpecificStateKey(currentTask.TestId));
+                if (stateResult.Success && stateResult.Value != null)
+                {
+                    //StepZeroUserInputs = stateResult.Value.StepZeroInputs.Select(CloneVariableInputData).ToList() ?? new List<VariableInputData>();
+                    DisplayedStepInstances = stateResult.Value.DisplayedSteps.Select(CloneActiveStepInstance).ToList() ?? new List<ActiveStepInstance>();
+                    ReindexDisplayedSteps();
+                    Console.WriteLine($"Состояние UI восстановлено для задания {currentTask.TestId}");
+                }
+                else
+                {
+                    InitializeStepZeroInputsForCurrentTask(); // Если нет сохраненного
+                    Console.WriteLine($"Состояние UI инициализировано для нового задания {currentTask.TestId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка восстановления состояния для задания {currentTask.TestId}: {ex.Message}");
+                InitializeStepZeroInputsForCurrentTask();
+            }
+        }
+        UpdateNextButtonText();
+        if (!initialSetup) StateHasChanged();
+    }
+
+    private void UpdateNextButtonText()
+    {
+        if (currentTaskIndex < sessionTasks.Count - 1)
+        {
+            nextButtonText = "Следующее задание";
+        }
+        else
+        {
+            nextButtonText = "Завершить сессию";
+        }
+    }
+
+
+
+    private async Task AddStepInstanceBasedOnAlgorithmStep(AlgorithmStepInfo algoStep) // async Task
+    {
+        if (algoStep == null || algoStep.OriginalStepNumberInDb == 0) return;
+
+        var newInstance = new ActiveStepInstance
+            {
+                OriginalStepNumber = algoStep.OriginalStepNumberInDb,
+                Description = algoStep.ParsedDescription,   
+                DisplayOrder = DisplayedStepInstances.Count + 1, // Устанавливаем DisplayOrder
+                UserInputs = new List<VariableInputData>()
+            };
+
+        foreach (var trackedVarInfo in algoStep.VariablesToTrack)
+        {
+            var inputDataItem = new VariableInputData
+                {
+                    Name = trackedVarInfo.Name,
+                    IsArray = trackedVarInfo.IsArrayType,
+                    IsTwoDimensional = trackedVarInfo.IsTwoDimensionalArray,
+                    PlaceholderText = trackedVarInfo.PlaceholderTextSingle
+                };
+
+            if (trackedVarInfo.IsArrayType)
+            {
+                if (trackedVarInfo.IsTwoDimensionalArray)
+                {
+                    inputDataItem.ArrayRows = Math.Max(1, trackedVarInfo.ArrayDimension1Size);
+                    inputDataItem.ArrayCols = Math.Max(1, trackedVarInfo.ArrayDimension2Size);
+                    inputDataItem.TwoDArrayCellValues = new List<List<string?>>();
+                    for (int r = 0; r < inputDataItem.ArrayRows; r++)
+                    {
+                        inputDataItem.TwoDArrayCellValues.Add(new List<string?>(new string?[inputDataItem.ArrayCols]));
+                    }
+                }
+                else // Одномерный
+                {
+                    inputDataItem.ArrayLength = Math.Max(1, trackedVarInfo.ArrayDimension1Size);
+                    inputDataItem.ArrayCellValues = new List<string?>(new string?[inputDataItem.ArrayLength]);
+                }
+            }
+            newInstance.UserInputs.Add(inputDataItem);
+        }
+
+        DisplayedStepInstances.Add(newInstance);
+        await SaveCurrentTaskProgressAsync(); // Сохраняем состояние текущего задания
+        //await SaveFullSessionStateAsync();
+        StateHasChanged();
+    }
+
+    private string GetInstanceStatusClass(StepStatus status) => status switch
+    {
+        StepStatus.Correct => "atp-instance-correct",
+        StepStatus.Incorrect => "atp-instance-incorrect",
+        StepStatus.Pending => "atp-instance-pending", // Ожидание ответа от сервера
+        StepStatus.Submitted => "atp-instance-submitted", // Отправлено в контрольном режиме, результат см. в общем балле
+        StepStatus.NotChecked => "atp-instance-notchecked",
+        _ => "atp-instance-notchecked"
+    };
+
+    private async Task CheckCurrentTaskSolutionAsync()
+    {
+        if (currentTask == null || IsCheckingSolution || currentTestMode != PreTestPage.TestMode.Training) return;
+        // --- ПРОВЕРКА ЗАПОЛНЕНИЯ ПОЛЕЙ ---
+        bool allFieldsFilled = true;
+        // Проверка DisplayedStepInstances
+        foreach (var instance in DisplayedStepInstances)
+        {
+            foreach (var userInput in instance.UserInputs)
+            {
+                if (userInput.IsArray)
+                {
+                    if (userInput.ArrayCellValues.Any(cell => string.IsNullOrWhiteSpace(cell)))
+                    {
+                        allFieldsFilled = false;
+                        userInput.ErrorMessageForUI = "Все ячейки массива должны быть заполнены";
+                    }
+                    else { userInput.ErrorMessageForUI = null; }
+                }
+                else if (string.IsNullOrWhiteSpace(userInput.CurrentValue))
+                {
+                    allFieldsFilled = false;
+                    userInput.ErrorMessageForUI = "Поле не должно быть пустым";
+                }
+                else { userInput.ErrorMessageForUI = null; }
+            }
+        }
+
+        if (!allFieldsFilled)
+        {
+            fieldValidationErrorMessage = "Пожалуйста, заполните все обязательные поля для ввода шагов.";
+            StateHasChanged(); // Обновить UI для отображения сообщений об ошибках
+            return; // Прерываем проверку, если не все поля заполнены
+        }
+        // --- КОНЕЦ ПРОВЕРКИ ЗАПОЛНЕНИЯ ПОЛЕЙ ---
+
+        IsProcessingAction = true;
+        IsCheckingSolution = true;
+
+        foreach (var instance in DisplayedStepInstances) { instance.Status = StepStatus.NotChecked; instance.ErrorMessageForUI = null; }
+        StateHasChanged();
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+        {
+            loadingErrorMessage = "Ошибка: не удалось определить пользователя.";
+            hasLoadingError = true;
+            StateHasChanged();
+            return;
+        }
+
+        // Сбрасываем статусы или устанавливаем в Pending перед новой проверкой
+        foreach (var instance in DisplayedStepInstances) instance.Status = StepStatus.Pending;
+        // TODO: Аналогично для StepZeroUserInputs, если они оцениваются и имеют статус
+        StateHasChanged(); // Показать, что идет проверка
+
+        var testAttempt = new TestAttemptDto { TestId = currentTask.TestId };
+
+        // 1. Собираем данные из StepZeroUserInputs
+        // if (StepZeroUserInputs.Any())
+        // {
+        //     int stepZeroVarSequence = 0; // Локальный счетчик для переменных Шага 0
+        //     foreach (var userInput in StepZeroUserInputs)
+        //     {
+        //         string valueToSubmit = userInput.IsArray ?
+        //             string.Join(",", userInput.ArrayCellValues.Select(cell => cell ?? "")) :
+        //             (userInput.CurrentValue ?? "");
+
+        //         testAttempt.Variables.Add(new VariableSubmissionDto
+        //             {
+        //                 Sequence = stepZeroVarSequence++, // Последовательность переменной ВНУТРИ шага 0
+        //                 Step = 0, // Идентификатор Шага 0
+        //                 VariableName = userInput.Name,
+        //                 VariableValue = valueToSubmit
+        //             });
+        //     }
+        // }
+
+        // 2. Собираем данные из DisplayedStepInstances
+        foreach (var instance in DisplayedStepInstances)
+        {
+            foreach (var userInput in instance.UserInputs)
+            {
+                string valueToSubmit;
+                if (userInput.IsArray)
+                {
+                    if (userInput.IsTwoDimensional)
+                    {
+                        // Сериализуем 2D массив в строку: "1,2,3;4,5,6"
+                        valueToSubmit = string.Join(";",
+                            userInput.TwoDArrayCellValues.Select(row =>
+                                string.Join(",", row.Select(cell => cell ?? ""))
+                            )
+                        );
+                    }
+                    else // Одномерный
+                    {
+                        valueToSubmit = string.Join(",", userInput.ArrayCellValues.Select(cell => cell ?? ""));
+                    }
+                }
+                else
+                {
+                    valueToSubmit = userInput.CurrentValue ?? "";
+                }
+
+                testAttempt.Variables.Add(new VariableSubmissionDto
+                    {
+                        Sequence = instance.DisplayOrder, // Идентификатор экземпляра шага (порядковый номер на экране)
+                        Step = instance.OriginalStepNumber, // Номер шага из определения алгоритма
+                        VariableName = userInput.Name,
+                        VariableValue = valueToSubmit
+                    });
+            }
+        }
+
+        await ClearTables();
+
+        var evaluationRequest = new EvaluationUpdateRequestDto
+            {
+                UserId = userId,
+                SessionId = SessionId,
+                Type = (int)currentTestMode,
+                Tests = new List<TestAttemptDto> { testAttempt }
+            };
+
+        var evaluationResult = await EvaluationService.UpdateEvaluationAsync(evaluationRequest);
+
+        if (evaluationResult != null)
+        {
+            var errorsFromApi = evaluationResult.Errors ?? new List<ErrorDto>();
+            foreach (var instance in DisplayedStepInstances) instance.Status = StepStatus.Correct; // Предполагаем правильность
+
+            int maxUserStepSequence = DisplayedStepInstances.Any() ? DisplayedStepInstances.Max(di => di.DisplayOrder) : 0;
+            int maxErrorStepSequence = errorsFromApi.Where(e => e.Sequence.HasValue).Select(e => e.Sequence.Value).DefaultIfEmpty(0).Max();
+
+            if (maxErrorStepSequence > maxUserStepSequence)
+            {
+                // Сохраняем это сообщение для отображения в UI
+                // Мы можем использовать fieldValidationErrorMessage или новое свойство.
+                fieldValidationErrorMessage = "Ваше решение не закончено. Проверьте последовательность шагов.";
+                Console.WriteLine("Обнаружена ошибка: решение не закончено (ошибки для не добавленных шагов).");
+            }
+
+            foreach (var error in errorsFromApi)
+            {
+                if (error.TestId == currentTask.TestId) // Ошибка для текущего теста
+                {
+                    ActiveStepInstance? instanceWithError = null;
+                    instanceWithError = DisplayedStepInstances
+                            .FirstOrDefault(di => di.DisplayOrder == error.Sequence && di.OriginalStepNumber == error.Step);
+
+                    if (instanceWithError != null)
+                    {
+                        instanceWithError.Status = StepStatus.Incorrect;
+                        instanceWithError.ErrorMessageForUI = ParseErrorMessage(error.Message, error);
+                    }
+                    else if (error.Step != 0) // Если ошибка не для шага 0, но инстанс не найден
+                    {
+                        Console.WriteLine($"Не найден экземпляр шага для ошибки: TestId={error.TestId}, Sequence={error.Sequence}, Step={error.Step}, VarName={error.VariableName}, Msg='{error.Message}'");
+                    }
+                }
+            }
+        }
+        else
+        {
+            loadingErrorMessage = "Не удалось получить результат оценки (ответ null).";
+            hasLoadingError = true;
+            Console.WriteLine(loadingErrorMessage);
+            // Помечаем все шаги как не проверенные, так как ответ не пришел
+            foreach (var instance in DisplayedStepInstances) instance.Status = StepStatus.NotChecked;
+        }
+        await SaveCurrentTaskProgressAsync(); // Сохраняем обновленные статусы и введенные данные
+        IsProcessingAction = false; 
+        IsCheckingSolution = false; 
+        StateHasChanged();
+    }
+
+    private string ParseErrorMessage(string apiMessage, ErrorDto errorDetails)
+    {
+        // Приводим к нижнему регистру для более надежного сравнения
+        string lowerApiMessage = apiMessage.ToLowerInvariant();
+
+        if (lowerApiMessage.Contains("contains variables not matching true program step"))
+        {
+            return "Не тот шаг алгоритма, перепроверьте решение.";
+        }
+        // Для "Invalid step for testId..." нам нужны параметры из errorDetails
+        if (lowerApiMessage.StartsWith($"invalid step for testid={errorDetails.TestId?.ToString().ToLowerInvariant()}, sequence={errorDetails.Sequence?.ToString().ToLowerInvariant()}, step={errorDetails.Step?.ToString().ToLowerInvariant()}"))
+        {
+            return "Не тот шаг алгоритма, перепроверьте решение.";
+        }
+        if (lowerApiMessage.Contains("does not exist in program execution"))
+        {
+            return "Возможно это лишний или неподходящий шаг, перепроверьте решение.";
+        }
+        if (lowerApiMessage.Contains("incorrect value for")) // "Incorrect value for {userVar.VariableName}: expected {substituteValue}, got {userValue}, mismatches={total - matches}"
+        {
+            return $"Не то значение переменной {errorDetails.VariableName ?? ""}, перепроверьте решение.";
+        }
+        if (lowerApiMessage.Contains("пользователь имеет лишние шаги")) // "Пользователь имеет лишние шаги, начиная с sequence={programMaxStep + 1}"
+        {
+            return "Ваше решение избыточно, перепроверьте решение.";
+        }
+        if (lowerApiMessage.Contains("No matching value in substitute-values for") || lowerApiMessage.Contains("Неверный номер шага"))
+        {
+            return "Не тот шаг алгоритма, перепроверьте решение.";
+        }
+        // Если ни одно из известных сообщений не подошло, возвращаем оригинальное (или более общее)
+        Console.WriteLine($"Нераспознанное сообщение об ошибке API: '{apiMessage}' для Step: {errorDetails.Step}, Seq: {errorDetails.Sequence}, Var: {errorDetails.VariableName}");
+        return "Обнаружена ошибка в этом шаге. Детали: " + apiMessage; // Или просто "Перепроверьте этот шаг."
+    }
+
+    private async Task GoToNextTaskOrFinishSession()
+    {
+
+        if (IsProcessingAction) return;
+        IsProcessingAction = true; 
+        StateHasChanged();
+        fieldValidationErrorMessage = null; // Сброс перед проверкой
+
+        // --- ПРОВЕРКА ЗАПОЛНЕНИЯ ПОЛЕЙ ТЕКУЩЕГО ЗАДАНИЯ ---
+        bool currentTaskFieldsFilled = true;
+        if (currentTask != null) // Проверяем только если есть текущее задание
+        {
+            foreach (var instance in DisplayedStepInstances)
+            {
+                foreach (var userInput in instance.UserInputs)
+                {
+                    if (userInput.IsArray ? userInput.ArrayCellValues.Any(string.IsNullOrWhiteSpace) : string.IsNullOrWhiteSpace(userInput.CurrentValue))
+                    { currentTaskFieldsFilled = false; userInput.ErrorMessageForUI = "Заполните поле"; }
+                    else { userInput.ErrorMessageForUI = null; }
+                }
+            }
+        }
+
+        if (!currentTaskFieldsFilled)
+        {
+            fieldValidationErrorMessage = "Пожалуйста, заполните все поля текущего задания перед переходом.";
+            IsProcessingAction = false; StateHasChanged();
+            return;
+        }
+        // --- КОНЕЦ ПРОВЕРКИ ---
+
+        // Сначала сохраняем состояние текущего (уходящего) задания
+        SaveCurrentTaskStateToFullState();
+        await SaveCurrentTaskProgressAsync();
+
+        if (currentTaskIndex < sessionTasks.Count - 1)
+        {
+            currentTaskIndex++;
+            await SaveGlobalProgressAsync(); // Сохраняем новый индекс текущего задания и оставшееся время
+            await SetCurrentTask(currentTaskIndex);
+            IsProcessingAction = false; // Разблокируем после загрузки следующего задания
+            // StateHasChanged(); // Вызовется в SetCurrentTask
+        }
+        else // Это кнопка "Завершить сессию"
+        {
+            // Собираем ВСЕ данные для ВСЕХ заданий и отправляем на оценку
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                loadingErrorMessage = "Ошибка: не удалось определить пользователя для завершения."; hasLoadingError = true;
+                IsProcessingAction = false; StateHasChanged(); return;
+            }
+
+            var allTestAttemptsForSession = new List<TestAttemptDto>();
+            foreach (var taskInfo in sessionTasks)
+            {
+                TestSessionTaskState? taskState = null;
+                try { var sr = await ProtectedSessionStore.GetAsync<TestSessionTaskState>(TaskSpecificStateKey(taskInfo.TestId)); if (sr.Success) taskState = sr.Value; } catch { }
+                TestAttemptDto attempt;
+
+                // Проверяем, есть ли сохраненное состояние для этого задания
+                if (currentSessionFullState.TaskStates.TryGetValue(taskInfo.TestId, out taskState) && taskState.DisplayedSteps.Count > 0)
+                {
+                    // Если состояние есть и оно не пустое, собираем реальные данные
+                    attempt = new TestAttemptDto { TestId = taskInfo.TestId };
+
+                    // Собираем данные из DisplayedSteps
+                    foreach (var instance in taskState.DisplayedSteps)
+                    {
+                        foreach (var userInput in instance.UserInputs)
+                        {
+                            attempt.Variables.Add(new VariableSubmissionDto
+                                {
+                                    Sequence = instance.DisplayOrder,
+                                    Step = instance.OriginalStepNumber,
+                                    VariableName = userInput.Name,
+                                    VariableValue = userInput.IsArray ? string.Join(",", userInput.ArrayCellValues.Select(c => c ?? "")) : (userInput.CurrentValue ?? "")
+                                });
+                        }
+                    }
+                }
+                else
+                {
+                    // Если состояния нет ИЛИ оно пустое, создаем заглушку
+                    Console.WriteLine($"Создание заглушки для пропущенного задания TestId: {taskInfo.TestId}");
+                    attempt = new TestAttemptDto
+                        {
+                            TestId = taskInfo.TestId,
+                            Variables = new List<VariableSubmissionDto>
+                    {
+                        // Создаем одну переменную-заглушку, как вы описали
+                        new VariableSubmissionDto
+                        {
+                            Sequence = 1,
+                            Step = 1,
+                            VariableName = "skip", // или "string", или другое понятное значение
+                            VariableValue = "0" // или "string"
+                        }
+                    }
+                        };
+                }
+                allTestAttemptsForSession.Add(attempt);
+            }
+
+            if (!allTestAttemptsForSession.Any())
+            {
+                Console.WriteLine("Нет данных для отправки на итоговую оценку по сессии.");
+                await ProcessSessionCompletion("completed_no_data_final", null);
+                IsProcessingAction = false;
+                StateHasChanged();
+                return;
+            }
+
+            var finalRequest = new EvaluationUpdateRequestDto
+                {
+                    UserId = userId,
+                    SessionId = SessionId,
+                    Type = (int)currentTestMode,
+                    Tests = allTestAttemptsForSession
+                };
+
+            await ClearTables();
+
+            lastEvaluationResult = await EvaluationService.UpdateEvaluationAsync(finalRequest);
+            await ProcessSessionCompletion(
+                currentTestMode == PreTestPage.TestMode.Control ? "control_completed_final" : "training_completed_final",
+                lastEvaluationResult?.Score
+            );
+            // IsProcessingAction сбросится в ProcessSessionCompletion
+        }
+        // IsProcessingAction = false; // Снимается в ProcessSessionCompletion или если не последний шаг
+    }
+
+    private async Task ClearAllSessionStateAsync()
+    {
+        try
+        {
+            // Удаляем состояние для каждого задания этой сессии
+            foreach (var taskInfo in sessionTasks) // Используем загруженный список sessionTasks
+            {
+                await ProtectedSessionStore.DeleteAsync($"{SessionStateKeyBase}_Task_{taskInfo.TestId}");
+            }
+            // Удаляем глобальное состояние сессии
+            await ProtectedSessionStore.DeleteAsync(CurrentGlobalTaskIndexKey);
+            await ProtectedSessionStore.DeleteAsync(TimeRemainingKey);
+            Console.WriteLine($"Все состояние для сессии {SessionId} очищено.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка при очистке состояния сессии: {ex.Message}");
+        }
+    }
+
+
+    // Вызывать CheckCurrentTaskSolutionAsync() из NextStepOrFinish:
+    private async void NextStepOrFinish()
+    {
+        await CheckCurrentTaskSolutionAsync(); // Проверяем текущее решение
+
+        // Не переходим на следующее задание, пока текущее не проверено успешно (опционально)
+        // или даем пользователю перейти в любом случае.
+        // bool canProceed = DisplayedStepInstances.All(s => s.Status == StepStatus.Correct) &&
+        //                   (StepZeroUserInputs.Any() ? /*проверка шага 0*/ true : true) ;
+        // if (!canProceed && currentTestMode == PreTestPage.TestMode.Control) {
+        //     // Показать сообщение, что нужно исправить ошибки
+        //     return;
+        // }
+
+
+        await SaveTaskSpecificStateAsync(); // Сохраняем состояние (включая обновленные статусы шагов)
+
+        if (currentTaskIndex < sessionTasks.Count - 1)
+        {
+            currentTaskIndex++;
+            await SaveGlobalStateAsync();
+            SetCurrentTask(currentTaskIndex); // Загрузит новое задание и его состояние
+        }
+        else
+        {
+            Console.WriteLine("Все задания выполнены. Завершение сессии...");
+            // await ClearAllSessionStateAsync(); // Очистка всего состояния сессии
+            NavigationManager.NavigateTo($"/session-results/{SessionId}");
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RemoveStepInstance(ActiveStepInstance instanceToRemove)
+    {
+        if (DisplayedStepInstances.Remove(instanceToRemove))
+        {
+            ReindexDisplayedSteps();
+            await SaveCurrentTaskProgressAsync(); // Сохраняем состояние текущего задания
+            StateHasChanged();
+        }
+    }
+
+
+    private void ReindexDisplayedSteps()
+    {
+        for (int i = 0; i < DisplayedStepInstances.Count; i++)
+        {
+            DisplayedStepInstances[i].DisplayOrder = i + 1;
+        }
+    }
+
+    private async Task ProcessSessionCompletion(string reason, float? finalScore)
+    {
+        Console.WriteLine($"Завершение сессии {SessionId}. Причина: {reason}. Итоговый Score: {finalScore}");
+        _timer?.Dispose(); _timer = null;
+        // IsProcessingAction уже должен быть true
+
+        if (finalScore.HasValue)
+        {
+            try { await ProtectedSessionStore.SetAsync(FinalScoreKey, finalScore.Value); } catch { }
+        }
+        else if (reason.Contains("timeout") || reason.Contains("no_data"))
+        { // Если нет балла, но сессия завершилась
+            try { await ProtectedSessionStore.SetAsync(FinalScoreKey, 0f); } catch { } // Сохраняем 0 или спец. значение
+        }
+
+        // TODO: Сохранить итог сессии (UserId, SessionId, finalScore, reason) в вашу основную БД (Db)
+
+        await ClearAllWorkingSessionDataAsync(); // Новый метод для очистки всего, КРОМЕ FinalScoreKey
+
+        IsProcessingAction = false; // Разблокируем перед навигацией
+        StateHasChanged();
+        NavigationManager.NavigateTo($"/session-results/{SessionId}?reason={reason}");
+    }
+
+    private async Task ClearAllWorkingSessionDataAsync()
+    {
+        try
+        {
+            foreach (var taskInfo in sessionTasks)
+            {
+                await ProtectedSessionStore.DeleteAsync(TaskSpecificStateKey(taskInfo.TestId));
+            }
+            await ProtectedSessionStore.DeleteAsync(CurrentGlobalTaskIndexKey);
+            await ProtectedSessionStore.DeleteAsync(TimeRemainingKey);
+            // НЕ удаляем FinalScoreKey здесь
+            Console.WriteLine($"Рабочее состояние для сессии {SessionId} очищено (кроме итогового балла).");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка при очистке рабочего состояния сессии: {ex.Message}"); }
+    }
+
+    private VariableInputData CloneVariableInputData(VariableInputData original)
+    {
+        return new VariableInputData
+            {
+                Name = original.Name, // Копируем Name
+            // Label = original.Label, // <<< ЭТУ СТРОКУ НУЖНО УДАЛИТЬ ИЛИ ЗАКОММЕНТИРОВАТЬ
+            // Label будет вычислен автоматически на основе Name
+                CurrentValue = original.CurrentValue,
+                IsArray = original.IsArray,
+                ArrayCellValues = new List<string?>(original.ArrayCellValues ?? new List<string?>()), // Добавил ?? new List для nullable
+                ArrayLength = original.ArrayLength,
+                IsTwoDimensional = original.IsTwoDimensional,
+                TwoDArrayCellValues = original.TwoDArrayCellValues?.Select(row => new List<string?>(row ?? new List<string?>())).ToList(), // Добавил ?? new List для nullable
+                ArrayRows = original.ArrayRows,
+                ArrayCols = original.ArrayCols,
+                MaxCellsPerDimension = original.MaxCellsPerDimension,
+                PlaceholderText = original.PlaceholderText,
+                Status = original.Status,
+                ErrorMessageForUI = original.ErrorMessageForUI
+            };
+    }
+
+    private ActiveStepInstance CloneActiveStepInstance(ActiveStepInstance o) => new ActiveStepInstance(o.InstanceId)
+    {
+            OriginalStepNumber = o.OriginalStepNumber,
+            Description = o.Description,
+            DisplayStepNumberFromAlgo = o.DisplayStepNumberFromAlgo, // <<< ДОБАВЛЯЕМ КОПИРОВАНИЕ
+            UserInputs = o.UserInputs.Select(CloneVariableInputData).ToList(),
+            Status = o.Status,
+            DisplayOrder = o.DisplayOrder,
+            ErrorMessageForUI = o.ErrorMessageForUI
+    };
+
+    private async Task SaveFullSessionStateAsync()
+    {
+        try
+        {
+            SaveCurrentTaskStateToFullState(); // Сохраняем текущее задание в общий стейт перед сохранением всего
+            currentSessionFullState.CurrentGlobalTaskIndex = currentTaskIndex;
+            currentSessionFullState.TimeRemainingSeconds = _totalSecondsRemaining;
+            await ProtectedSessionStore.SetAsync(AllTasksStateKey, currentSessionFullState);
+            Console.WriteLine($"Полное состояние сессии {SessionId} сохранено.");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка сохранения полного состояния сессии: {ex.Message}"); }
+    }
+
+    private async Task RestoreFullSessionStateAsync()
+    {
+        try
+        {
+            var stateResult = await ProtectedSessionStore.GetAsync<AllTasksSessionState>(AllTasksStateKey);
+            if (stateResult.Success && stateResult.Value != null)
+            {
+                currentSessionFullState = stateResult.Value;
+                currentTaskIndex = currentSessionFullState.CurrentGlobalTaskIndex;
+                _totalSecondsRemaining = currentSessionFullState.TimeRemainingSeconds;
+                Console.WriteLine($"Полное состояние сессии {SessionId} восстановлено.");
+            }
+            else
+            {
+                // Начальная инициализация, если состояния нет
+                currentSessionFullState = new AllTasksSessionState();
+                currentTaskIndex = 0;
+                _totalSecondsRemaining = (int)sessionTimeLimit.TotalSeconds; // Из загруженного времени сессии
+            }
+            UpdateTimeRemainingDisplay(); // Обновляем отображение времени
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка восстановления полного состояния сессии: {ex.Message}");
+            currentSessionFullState = new AllTasksSessionState();
+            currentTaskIndex = 0;
+            _totalSecondsRemaining = (int)sessionTimeLimit.TotalSeconds;
+        }
+    }
+    private async Task ClearAllSessionStateButResultsAsync()
+    {
+        try
+        {
+            var testIdsInSession = sessionTasks.Select(st => st.TestId).ToList(); // Берем из уже загруженных
+            foreach (var testId in testIdsInSession)
+            {
+                await ProtectedSessionStore.DeleteAsync($"{SessionStateKeyBase}_Task_{testId}");
+            }
+            await ProtectedSessionStore.DeleteAsync(CurrentGlobalTaskIndexKey);
+            await ProtectedSessionStore.DeleteAsync(TimeRemainingKey);
+            // НЕ УДАЛЯЕМ SessionScore_{SessionId} и SessionErrors_{SessionId} здесь, их прочитает страница результатов
+            Console.WriteLine($"Рабочее состояние для сессии {SessionId} очищено.");
+        }
+        catch (Exception ex) { Console.WriteLine($"Ошибка при очистке рабочего состояния сессии: {ex.Message}"); }
+    }
+
+    private async Task AddNextStepInstance(ActiveStepInstance? previousStepInstance, AlgorithmStepInfo nextStepTemplate)
+    {
+        if (IsProcessingAction) return;
+        if (nextStepTemplate == null || nextStepTemplate.OriginalStepNumberInDb == 0) return;
+
+        var newInstance = new ActiveStepInstance
+            {
+                OriginalStepNumber = nextStepTemplate.OriginalStepNumberInDb,
+                Description = nextStepTemplate.ParsedDescription, // Записываем чистое описание
+                DisplayStepNumberFromAlgo = nextStepTemplate.DisplayStepNumber, // Записываем номер для отображения
+                DisplayOrder = DisplayedStepInstances.Any() ? DisplayedStepInstances.Max(di => di.DisplayOrder) + 1 : 1,
+                UserInputs = new List<VariableInputData>()
+            };
+
+        // Если есть предыдущие шаги, ищем последний и увеличиваем DisplayOrder
+        if (DisplayedStepInstances.Any())
+        {
+            newInstance.DisplayOrder = DisplayedStepInstances.Max(di => di.DisplayOrder) + 1;
+        }
+        else
+        {
+            newInstance.DisplayOrder = 1; // Самый первый шаг
+        }
+
+
+        foreach (var trackedVarInfo in nextStepTemplate.VariablesToTrack)
+        {
+            var inputDataItem = new VariableInputData
+                {
+                    Name = trackedVarInfo.Name,
+                    IsArray = trackedVarInfo.IsArrayType,
+                    IsTwoDimensional = trackedVarInfo.IsTwoDimensionalArray,
+                    PlaceholderText = trackedVarInfo.PlaceholderTextSingle
+                };
+
+            if (trackedVarInfo.IsArrayType)
+            {
+                if (trackedVarInfo.IsTwoDimensionalArray)
+                {
+                    inputDataItem.ArrayRows = Math.Max(1, trackedVarInfo.ArrayDimension1Size);
+                    inputDataItem.ArrayCols = Math.Max(1, trackedVarInfo.ArrayDimension2Size);
+                    inputDataItem.TwoDArrayCellValues = new List<List<string?>>();
+                    for (int r = 0; r < inputDataItem.ArrayRows; r++)
+                    {
+                        inputDataItem.TwoDArrayCellValues.Add(new List<string?>(new string?[inputDataItem.ArrayCols]));
+                    }
+                }
+                else // Одномерный
+                {
+                    inputDataItem.ArrayLength = Math.Max(1, trackedVarInfo.ArrayDimension1Size);
+                    inputDataItem.ArrayCellValues = new List<string?>(new string?[inputDataItem.ArrayLength]);
+                }
+            }
+            newInstance.UserInputs.Add(inputDataItem);
+        }
+        DisplayedStepInstances.Add(newInstance);
+        DisplayedStepInstances = DisplayedStepInstances.OrderBy(di => di.DisplayOrder).ToList(); // На всякий случай, если порядок важен
+
+        await SaveTaskSpecificStateAsync();
+        StateHasChanged();
+    }
+
+    private async Task ClearTables()
+    {
+        string sqlDeleteUserSolutions = @"DELETE FROM public.""SolutionsByUsers"" WHERE 1=1;";
+        await Db.Database.ExecuteSqlRawAsync(sqlDeleteUserSolutions);
+
+        string sqlDeleteProgramSolutions = @"DELETE FROM public.""SolutionsByPrograms"" WHERE 1=1;";
+        await Db.Database.ExecuteSqlRawAsync(sqlDeleteProgramSolutions);
+
+        string sqlDeleteVarProgramSolutions = @"DELETE FROM public.""VariablesSolutionsByPrograms"" WHERE 1=1;";
+        await Db.Database.ExecuteSqlRawAsync(sqlDeleteVarProgramSolutions);
+
+        string sqlDeleteVarUserSolutions = @"DELETE FROM public.""VariablesSolutionsByUsers"" WHERE 1=1;";
+        await Db.Database.ExecuteSqlRawAsync(sqlDeleteVarUserSolutions);
+
+        Console.WriteLine($"Очищены (через SQL)");
+    }
+
+
+    // --- Таймер ---
+    private void InitializeAndStartTimer(bool useSessionTimeLimitAsInitial = true)
+    {
+        if (useSessionTimeLimitAsInitial || _totalSecondsRemaining <= 0)
+        {
+            _totalSecondsRemaining = (int)sessionTimeLimit.TotalSeconds;
+        }
+        UpdateTimeRemainingDisplay(); _timer?.Dispose();
+        if (_totalSecondsRemaining > 0)
+        {
+            _timer = new System.Threading.Timer(TimerTick, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        }
+        else if (sessionTimeLimit == TimeSpan.Zero)
+        {
+            timeRemainingDisplay = "Без ограничений";
+        }
+        else { timeRemainingDisplay = "00:00:00"; if (!isLoadingInitialData && !IsProcessingAction) InvokeAsync(HandleTimeExpired); }
+    }
+
+    private async void TimerTick(object? state) // async void
+    {
+        bool shouldStopTimer = false;
+        if (_totalSecondsRemaining > 0)
+        {
+            _totalSecondsRemaining--;
+            UpdateTimeRemainingDisplay();
+            if (_totalSecondsRemaining % 10 == 0) // Периодическое сохранение
+            {
+                await SaveGlobalProgressAsync(); // Сохраняем только время и индекс задания
+            }
+        }
+        else
+        {
+            _totalSecondsRemaining = 0;
+            UpdateTimeRemainingDisplay();
+            shouldStopTimer = true;
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        if (shouldStopTimer)
+        {
+            _timer?.Dispose();
+            _timer = null;
+            await InvokeAsync(HandleTimeExpired);
+        }
+    }
+
+    private void UpdateTimeRemainingDisplay()
+    {
+        if (sessionTimeLimit == TimeSpan.Zero)
+        {
+            timeRemainingDisplay = "Без ограничений";
+            return;
+        }
+        TimeSpan ts = TimeSpan.FromSeconds(_totalSecondsRemaining);
+        timeRemainingDisplay = $"{Math.Floor(ts.TotalHours):00}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+    }
+
+    private async Task HandleTimeExpired()
+    {
+        Console.WriteLine("Время сессии истекло!");
+        _timer?.Dispose(); _timer = null;
+        SaveCurrentTaskStateToFullState();
+        // Здесь НЕ вызываем CheckCurrentTaskSolutionAsync, так как нам нужно отправить ВСЕ накопленные данные
+        // Собираем все данные аналогично блоку "Завершить сессию" в GoToNextTaskOrFinishSession
+        IsProcessingAction = true; StateHasChanged();
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+        {
+            await ProcessSessionCompletion("timeout_user_error", null); return;
+        }
+
+        var allTestAttemptsForSession = new List<TestAttemptDto>();
+        foreach (var taskInfo in sessionTasks)
+        {
+            TestSessionTaskState? taskState = null;
+            try { var sr = await ProtectedSessionStore.GetAsync<TestSessionTaskState>(TaskSpecificStateKey(taskInfo.TestId)); if (sr.Success) taskState = sr.Value; } catch { }
+            if (taskState != null)
+            {
+                var attempt = new TestAttemptDto { TestId = taskInfo.TestId };
+                // Проверяем, есть ли сохраненное состояние для этого задания
+                if (currentSessionFullState.TaskStates.TryGetValue(taskInfo.TestId, out taskState))
+                {
+                    // Если состояние есть и оно не пустое, собираем реальные данные
+                    attempt = new TestAttemptDto { TestId = taskInfo.TestId };
+
+                    // Собираем данные из DisplayedSteps
+                    foreach (var instance in taskState.DisplayedSteps)
+                    {
+                        foreach (var userInput in instance.UserInputs)
+                        {
+                            attempt.Variables.Add(new VariableSubmissionDto
+                                {
+                                    Sequence = instance.DisplayOrder,
+                                    Step = instance.OriginalStepNumber,
+                                    VariableName = userInput.Name,
+                                    VariableValue = userInput.IsArray ? string.Join(",", userInput.ArrayCellValues.Select(c => c ?? "")) : (userInput.CurrentValue ?? "")
+                                });
+                        }
+                    }
+                }
+                else
+                {
+                    // Если состояния нет ИЛИ оно пустое, создаем заглушку
+                    Console.WriteLine($"Создание заглушки для пропущенного задания TestId: {taskInfo.TestId}");
+                    attempt = new TestAttemptDto
+                        {
+                            TestId = taskInfo.TestId,
+                            Variables = new List<VariableSubmissionDto>
+                    {
+                        // Создаем одну переменную-заглушку, как вы описали
+                        new VariableSubmissionDto
+                        {
+                            Sequence = 1,
+                            Step = 1,
+                            VariableName = "skip", // или "string", или другое понятное значение
+                            VariableValue = "0" // или "string"
+                        }
+                    }
+                        };
+                }
+                allTestAttemptsForSession.Add(attempt);
+            }
+        }
+
+        if (!allTestAttemptsForSession.Any())
+        {
+            await ProcessSessionCompletion("timeout_no_data", null); return;
+        }
+
+        var finalRequest = new EvaluationUpdateRequestDto { /* ... */ Tests = allTestAttemptsForSession };
+        lastEvaluationResult = await EvaluationService.UpdateEvaluationAsync(finalRequest);
+        await ProcessSessionCompletion("timeout", lastEvaluationResult?.Score);
+    }
+
+    private void GoBackToSessions() { NavigationManager.NavigateTo("/sessions"); }
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        // Вызов SaveProgressAsync здесь может быть проблематичным из-за синхронного контекста Dispose
+        // и асинхронной природы ProtectedSessionStore. Если очень нужно, рассмотрите IAsyncDisposable.
+        // Console.WriteLine("ActualTestPage disposed, attempting to save progress if any...");
+        // Task.Run(async () => await SaveProgressAsync()).GetAwaiter().GetResult(); // Блокирующий вызов - плохо
+        Console.WriteLine("ActualTestPage disposed, timer stopped.");
+    }
+}

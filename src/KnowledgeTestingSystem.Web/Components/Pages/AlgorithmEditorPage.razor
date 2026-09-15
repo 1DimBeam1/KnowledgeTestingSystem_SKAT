@@ -1,0 +1,620 @@
+﻿@* Componenta/Page/AlgorithmEditorPage.razor *@
+@page "/algorithm-editor"
+@page "/algorithm-editor/{AlgorithmId:int}"
+@inject NavigationManager NavigationManager
+@inject AlgorithmApiService AlgorithmService
+@inject IJSRuntime JSRuntime // Для потенциального взаимодействия с Monaco, если потребуется
+@rendermode InteractiveServer
+
+@using BlazorMonaco
+@using KnowledgeTestingSystem.Web.Services
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>@(AlgorithmId.HasValue ? $"Редактирование: {algorithmName}" : "Новый алгоритм")</PageTitle>
+
+<!-- Модальное окно подтверждения сохранения -->
+@if (showSaveConfirmation)
+{
+    <div class="modal-overlay" @onclick="CancelSave">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <h4>@("Подтверждение сохранения")</h4>
+            <p>@saveConfirmationMessage</p>
+            <div class="modal-actions">
+                @if (isMessage)
+                {
+                    <button class="modal-btn btn-save" @onclick="CancelSave">OK</button>
+                }
+                else
+                {
+                    <button class="modal-btn btn-secondary" @onclick="CancelSave">Отмена</button>
+                    <button class="modal-btn btn-save" @onclick="ExecuteSaveAlgorithm">Сохранить</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+
+<!-- Модальное окно подтверждения удаления -->
+@if (showDeleteConfirmation)
+{
+    <div class="modal-overlay" @onclick="CancelDelete">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <h4>Подтверждение удаления</h4>
+            <p>Вы уверены, что хотите удалить алгоритм "@algorithmName"?</p>
+            <div class="modal-actions">
+                <button class="modal-btn btn-secondary" @onclick="CancelDelete">Отмена</button>
+                <button class="modal-btn btn-danger" @onclick="ExecuteDeleteAlgorithm">Удалить</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="algo-editor-container">
+    <div class="algo-editor-header-controls">
+        <button class="algo-btn algo-btn-back" @onclick="NavigateBack">← Назад</button>
+        @if (AlgorithmId.HasValue)
+        {
+            <button class="algo-btn algo-btn-delete" @onclick="() => ConfirmDeleteAlgorithm(AlgorithmId.Value, algorithmName)">Удалить алгоритм</button>
+        }
+    </div>
+    <div class="algo-header-row">
+        <div class="algo-header-left">Алгоритм</div>
+        <div class="algo-header-right">Параметры</div>
+    </div>
+
+    <div class="algo-main-content">
+        <div class="algo-left-column">
+            <div class="algo-code-editor-area">
+                <StandaloneCodeEditor @ref="codeEditor"
+                                      @key="editorKey"
+                                      Id="algoMonacoEditor"
+                                      ConstructionOptions="EditorConstructionOptions"
+                                      OnDidInit="EditorOnDidInit" />
+            </div>
+            <div class="algo-description-section">
+                <div class="algo-description-input-row">
+                    <label for="algoDescFile">Описание алгоритма(файл):</label>
+                    <InputFile id="algoDescFile" OnChange="OnImageFileChange" accept=".jpg, .jpeg" />
+                </div>
+                <div class="algo-description-preview">
+                    @if (!string.IsNullOrEmpty(descriptionImagePreviewUrl))
+                    {
+                        <img src="@descriptionImagePreviewUrl" alt="Описание алгоритма" />
+                    }
+                    else
+                    {
+                        <div class="algo-no-preview">Предпросмотр описания</div>
+                    }
+                </div>
+                <button class="algo-btn algo-btn-compile" @onclick="CompileAlgorithm">Собрать</button>
+                @if (!string.IsNullOrWhiteSpace(compilationStatusMessage))
+                {
+                    <div class="compilation-status @(isCodeCompiledSuccessfully ? "status-success" : "status-error")">
+                        @* Используем MarkupString для корректного отображения <br/> *@
+                        @((MarkupString)compilationStatusMessage.Replace("\n", "<br/>"))
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="algo-right-column">
+            <div class="algo-param-group">
+                <label for="algorithmName">Название алгоритма:</label>
+                <input type="text" id="algorithmName" @bind="algorithmName" />
+            </div>
+
+            <div class="algo-param-group">
+                <label>
+                    Шаги отслеживания переменных:
+                    <span class="help-tooltip" title="Укажите номер строки кода, в которой необходимо отслеживать шаг алгоритма и переменные для отслеживания. Описание должно иметь вид - Описание_шага: номер_шага_на_картинке ">❔</span>
+                </label>
+                @foreach (var stepModel in TrackingSteps)
+                {
+                    <div class="tracking-step-item" @key="stepModel.Id">
+                        <div class="tracking-step-header">
+                            <span>Шаг @stepModel.StepNumber</span>
+                            <button class="btn-remove-step" title="Удалить шаг" @onclick="() => RemoveTrackingStep(stepModel.Id)">❌</button>
+                        </div>
+                        <div class="form-group">
+                            <label for="@($"desc_{stepModel.Id}")">Описание шага:</label>
+                            <input type="text" id="@($"desc_{stepModel.Id}")" @bind="stepModel.Description" placeholder="Например: Ключ для вставки и счетчик: 3" />
+                        </div>
+                        <div class="form-group">
+                            <label for="@($"line_{stepModel.Id}")">Строка кода для отслеживания:</label>
+                            <input type="number" id="@($"line_{stepModel.Id}")" @bind="stepModel.LineNumberInCode" min="1" />
+                        </div>
+                        <div class="form-group">
+                            <label for="@($"vars_{stepModel.Id}")">Переменные (через запятую):</label>
+                            <input type="text" id="@($"vars_{stepModel.Id}")" @bind="stepModel.VariablesToTrackRaw" placeholder="Например: i, j, arr" />
+                        </div>
+                    </div>
+                }
+                <button class="algo-btn btn-add-step" @onclick="AddTrackingStep">Добавить шаг отслеживания</button>
+            </div>
+
+            <div class="algo-param-group">
+                <label>
+                    Переменные с входными данными:
+                    <span class="help-tooltip" title="Укажите номер строки в коде, где инициализируется переменная, и имя переменной. Описание опционально для создания тестовых заданий.">❔</span>
+                </label>
+                <div class="input-setup-list">
+                    @* Добавляем контейнер для скролла, если нужно *@
+                    @foreach (var setup in DefaultInputSetups)
+                    {
+                        <div class="tracking-step-item input-value-setup-item" @key="setup.Id">
+                            <div class="tracking-step-header">
+                                <span>Инициализация переменной</span>
+                                <button class="btn-remove-step" title="Удалить строку" @onclick="() => RemoveDefaultInputSetup(setup.Id)">❌</button>
+                            </div>
+                            <div class="form-group">
+                                <label for="@($"input_line_{setup.Id}")">Строка кода инициализации:</label>
+                                <input type="number" id="@($"input_line_{setup.Id}")" @bind="setup.LineNumberInCode" min="1" />
+                            </div>
+                            <div class="form-group">
+                                <label for="@($"input_var_{setup.Id}")">Имя переменной:</label>
+                                <input type="text" id="@($"input_var_{setup.Id}")" @bind="setup.VariableName" placeholder="Например: arr" />
+                            </div>
+                            <div class="form-group">
+                                <label for="@($"input_desc_{setup.Id}")">Описание (опционально):</label>
+                                <input type="text" id="@($"input_desc_{setup.Id}")" @bind="setup.Description" placeholder="Например: Массив чисел" />
+                            </div>
+                        </div>
+                    }
+                </div>
+                <button class="algo-btn btn-add-step" @onclick="AddDefaultInputSetup">Добавить переменную</button>
+            </div>
+
+            <button class="algo-btn algo-btn-add-algorithm" @onclick="ConfirmSaveAlgorithm">Сохранить алгоритм</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int? AlgorithmId { get; set; }
+
+    //Редактор Monaco
+    private StandaloneCodeEditor? codeEditor;
+    private string editorKey = Guid.NewGuid().ToString();
+    private string currentCodeContent = "";
+
+    //Данные формы
+    private string algorithmName = "";
+    private IBrowserFile? selectedImageFile;
+    private string? descriptionImagePreviewUrl;
+    private string? existingPicPathOnApi; // Храним относительный путь к картинке с API
+    private List<TrackingStepViewModel> TrackingSteps { get; set; } = new List<TrackingStepViewModel>();
+    private List<InputValueSetupViewModel> DefaultInputSetups { get; set; } = new List<InputValueSetupViewModel>();
+
+    //Состояние UI
+    private bool showSaveConfirmation = false;
+    private bool showDeleteConfirmation = false;
+    private string saveConfirmationMessage = "";
+    private bool isMessage = false;
+    private bool isActionSuccessful = false;
+    private bool isLoadingData = false; // Флаг для индикации загрузки
+    private bool isCodeCompiledSuccessfully = false;
+    private string compilationStatusMessage = "";
+
+    // Флаг, показывающий, что данные загружены и можно безопасно работать с редактором
+    private bool _dataLoadedAndReadyForEditor = false;
+    // Флаг, что OnAfterRender был вызван хотя бы раз (для первоначальной установки значения)
+    private bool _hasRenderedOnce = false;
+
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoadingData = true;
+        _dataLoadedAndReadyForEditor = false; // Сбрасываем флаг перед загрузкой новых данных
+        // Не меняем editorKey здесь, если это вызывает проблемы. Попробуем без него сначала.
+        // editorKey = Guid.NewGuid().ToString();
+
+        ResetFormFields(); // Сбрасываем поля, включая currentCodeContent
+        if (AlgorithmId.HasValue)
+        {
+            await LoadAlgorithmDataAsync(AlgorithmId.Value);
+        }
+        else
+        {
+            // Новый алгоритм
+            AddTrackingStep();
+            AddDefaultInputSetup();
+        }
+
+        _dataLoadedAndReadyForEditor = true; // Данные загружены
+        editorKey = Guid.NewGuid().ToString();
+        isLoadingData = false;
+
+        StateHasChanged(); // Убедимся, что UI обновлен
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+    }
+    private void ResetFormFields()
+    {
+        algorithmName = "";
+        currentCodeContent = "";
+        TrackingSteps.Clear();
+        DefaultInputSetups.Clear();
+        selectedImageFile = null;
+        descriptionImagePreviewUrl = null;
+        existingPicPathOnApi = null;
+        isCodeCompiledSuccessfully = false;
+        compilationStatusMessage = "";
+    }
+
+    private async Task LoadAlgorithmDataAsync(int id)
+    {
+        var algoInfoTask = AlgorithmService.GetAlgorithmInfoAsync(id);
+        var codeTask = AlgorithmService.GetAlgorithmSourceAsync(id);
+        var apiStepsTask = AlgorithmService.GetApiAlgorithmStepsAsync(id);
+        var apiVarsTask = AlgorithmService.GetApiTrackedVariablesAsync(id);
+
+        await Task.WhenAll(algoInfoTask, codeTask, apiStepsTask, apiVarsTask);
+
+        var algorithmInfo = await algoInfoTask;
+        currentCodeContent = (await codeTask) ?? $"// Код для AlgoID {id} не найден";
+        var apiAlgoSteps = await apiStepsTask;
+        var apiTrackedVariables = await apiVarsTask;
+
+        if (algorithmInfo != null)
+        {
+            algorithmName = algorithmInfo.AlgorithmName ?? "Без имени";
+            existingPicPathOnApi = algorithmInfo.PicPath; // Сохраняем путь для возможной загрузки картинки
+        }
+        else
+        {
+            algorithmName = $"Алгоритм {id} (информация не найдена)";
+            Console.WriteLine($"AlgorithmEditorPage: Базовая информация для AlgoID {id} не найдена.");
+        }
+
+        if (!string.IsNullOrEmpty(existingPicPathOnApi))
+        {
+            var imageData = await AlgorithmService.GetAlgorithmPictureAsync(id); // Загружаем картинку
+            if (imageData != null)
+            {
+                descriptionImagePreviewUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(imageData)}";
+            }
+        }
+
+        if (apiAlgoSteps != null && apiTrackedVariables != null)
+        {
+            var step0Api = apiAlgoSteps.FirstOrDefault(s => s.Step == 0);
+            if (step0Api != null)
+            {
+                var step0VarsFromApi = apiTrackedVariables.Where(tv => tv.Step == 0).ToList();
+                var descriptionsMap = ParseVariableDescriptions(step0Api.Description);
+                foreach (var tv in step0VarsFromApi.OrderBy(v => v.LineNumber).ThenBy(v => v.VarName))
+                {
+                    DefaultInputSetups.Add(new InputValueSetupViewModel
+                        {
+                            LineNumberInCode = tv.LineNumber,
+                            VariableName = tv.VarName ?? "",
+                            Description = descriptionsMap.TryGetValue(tv.VarName ?? "", out var desc) ? desc : ""
+                        });
+                }
+            }
+
+            var regularStepsApi = apiAlgoSteps.Where(s => s.Step > 0).OrderBy(s => s.Step).ToList();
+            foreach (var stepApi in regularStepsApi)
+            {
+                var stepTrackedVars = apiTrackedVariables.Where(tv => tv.Step == stepApi.Step).Select(tv => tv.VarName ?? "").ToList();
+                int firstLineNumberForStep = apiTrackedVariables.FirstOrDefault(tv => tv.Step == stepApi.Step)?.LineNumber ?? 1;
+                TrackingSteps.Add(new TrackingStepViewModel
+                    {
+                        StepNumber = stepApi.Step,
+                        Description = stepApi.Description ?? "",
+                        LineNumberInCode = firstLineNumberForStep,
+                        VariablesToTrackRaw = string.Join(", ", stepTrackedVars)
+                    });
+            }
+        }
+        else
+        {
+            Console.WriteLine($"AlgorithmEditorPage: Ошибка загрузки шагов или переменных для AlgoID {id}.");
+        }
+
+        if (!DefaultInputSetups.Any()) AddDefaultInputSetup();
+        if (!TrackingSteps.Any()) AddTrackingStep();
+    }
+
+    private Dictionary<string, string> ParseVariableDescriptions(string? combinedDescription)
+    {
+        var map = new Dictionary<string, string>();
+        if (string.IsNullOrWhiteSpace(combinedDescription)) return map;
+        var pairs = combinedDescription.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var pair in pairs)
+        {
+            var parts = pair.Split(new[] { ':' }, 2);
+            if (parts.Length == 2) map[parts[0].Trim()] = parts[1].Trim();
+            else if (parts.Length == 1 && !string.IsNullOrWhiteSpace(parts[0])) map[parts[0].Trim()] = "";
+        }
+        return map;
+    }
+
+    private async Task OnImageFileChange(InputFileChangeEventArgs e)
+    {
+        selectedImageFile = e.File;
+        if (selectedImageFile != null)
+        {
+            try
+            {
+                var buffer = new byte[selectedImageFile.Size];
+                await selectedImageFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).ReadAsync(buffer);
+                descriptionImagePreviewUrl = $"data:image/{selectedImageFile.ContentType};base64,{Convert.ToBase64String(buffer)}";
+                existingPicPathOnApi = null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка загрузки превью изображения: {ex.Message}");
+                descriptionImagePreviewUrl = null;
+            }
+        }
+    }
+
+
+    private void AddTrackingStep()
+    {
+        TrackingSteps.Add(new TrackingStepViewModel { StepNumber = TrackingSteps.Count + 1 });
+    }
+
+    private void RemoveTrackingStep(Guid stepId)
+    {
+        var stepToRemove = TrackingSteps.FirstOrDefault(s => s.Id == stepId);
+        if (stepToRemove != null)
+        {
+            TrackingSteps.Remove(stepToRemove);
+            // Перенумеровать оставшиеся шаги
+            for (int i = 0; i < TrackingSteps.Count; i++)
+            {
+                TrackingSteps[i].StepNumber = i + 1;
+            }
+        }
+    }
+
+    private void AddDefaultInputSetup()
+    {
+        DefaultInputSetups.Add(new InputValueSetupViewModel());
+    }
+
+    private void RemoveDefaultInputSetup(Guid id)
+    {
+        var itemToRemove = DefaultInputSetups.FirstOrDefault(s => s.Id == id);
+        if (itemToRemove != null)
+        {
+            DefaultInputSetups.Remove(itemToRemove);
+        }
+    }
+
+
+    private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+            {
+                Language = "csharp",
+                Theme = "vs-dark",
+                Value = currentCodeContent, // Начальное значение при создании экземпляра редактора
+                AutomaticLayout = true,
+                ScrollBeyondLastLine = false,
+                LineNumbers = "on",
+                GlyphMargin = true,
+                ReadOnly = false,
+                Minimap = new EditorMinimapOptions { Enabled = false }
+            };
+    }
+
+
+    private async Task EditorOnDidInit()
+    {
+        // Вызывается один раз для КАЖДОГО НОВОГО экземпляра StandaloneCodeEditor (созданного из-за смены @key)
+        if (codeEditor != null)
+        {
+            //Console.WriteLine($"AlgorithmEditorPage: EditorOnDidInit for editorKey: {editorKey}. Monaco JS part is ready.");
+            // SetValue здесь больше не нужен, так как значение установлено через ConstructionOptions.
+            // await codeEditor.SetValue(currentCodeContent); // <--- УБРАТЬ или ЗАКОММЕНТИРОВАТЬ
+
+            // Принудительное обновление layout
+            await JSRuntime.InvokeVoidAsync("eval", "setTimeout(() => { try { const editorContainer = document.getElementById('algoMonacoEditor'); if(editorContainer) { const editorInstance = window.monaco?.editor?.getEditors().find(e => e.getDomNode().parentElement === editorContainer.firstChild); if(editorInstance) editorInstance.layout(); else console.warn('Monaco instance for algoMonacoEditor not found in OnDidInit by parent'); } else console.warn('Container algoMonacoEditor not found'); } catch(e) { console.error('Error in OnDidInit layout:', e); } }, 250);"); // Увеличил таймаут
+            //Console.WriteLine("AlgorithmEditorPage: EditorOnDidInit - layout() called.");
+        }
+        else
+        {
+            //Console.WriteLine($"AlgorithmEditorPage: EditorOnDidInit for editorKey: {editorKey}, but codeEditor IS NULL!");
+        }
+    }
+
+    private async Task<string> GetCodeFromEditor() => codeEditor != null ? await codeEditor.GetValue() : currentCodeContent;
+
+    private async Task CompileAlgorithm()
+    {
+        currentCodeContent = await GetCodeFromEditor();
+        if (string.IsNullOrWhiteSpace(currentCodeContent))
+        {
+            compilationStatusMessage = "Ошибка: Код для проверки пуст.";
+            isCodeCompiledSuccessfully = false;
+            StateHasChanged();
+            return;
+        }
+
+        compilationStatusMessage = "Проверка кода...";
+        isCodeCompiledSuccessfully = false;
+        StateHasChanged();
+
+
+        var result = await AlgorithmService.ExecuteTemporaryCodeAsync(currentCodeContent);
+
+        if (result != null)
+        {
+            // Флаг isCodeCompiledSuccessfully теперь зависит от IsSuccessful из результата выполнения
+            isCodeCompiledSuccessfully = result.IsSuccessful;
+            if (result.IsSuccessful)
+            {
+                compilationStatusMessage = "Код успешно выполнен (и скомпилирован)!"; // Обновляем сообщение
+                if (!string.IsNullOrWhiteSpace(result.Output))
+                {
+                    compilationStatusMessage += $"\nВывод:{result.Output}";
+                }
+                // Можно добавить result.Warnings, если он будет в ClientCodeExecutionResponseDto
+            }
+            else
+            {
+                compilationStatusMessage = $"Ошибка выполнения или компиляции:\n{(string.IsNullOrWhiteSpace(result.Error) ? "Неизвестная ошибка." : result.Error)}";
+            }
+            if (!string.IsNullOrWhiteSpace(result.Warning))
+            {
+                compilationStatusMessage += $"\n\nПредупреждения:\n{result.Warning}";
+            }
+        }
+        else
+        {
+            compilationStatusMessage = "Ошибка: Не удалось получить ответ от сервера проверки кода.";
+            isCodeCompiledSuccessfully = false;
+        }
+        StateHasChanged();
+    }
+
+
+    private async Task ConfirmSaveAlgorithm()
+    {
+
+        currentCodeContent = await GetCodeFromEditor();
+
+        isMessage = false;
+
+        if (string.IsNullOrWhiteSpace(algorithmName))
+        {
+            saveConfirmationMessage = "Название алгоритма не может быть пустым.";
+            isMessage = true;
+            showSaveConfirmation = true;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(currentCodeContent))
+        {
+            saveConfirmationMessage = "Код алгоритма не может быть пустым.";
+            isMessage = true;
+            showSaveConfirmation = true;
+            return;
+        }
+        if (!isCodeCompiledSuccessfully)
+        {
+            saveConfirmationMessage = "Код не был успешно собран (скомпилирован и выполнен без ошибок) или не был собран вовсе. Пожалуйста, проверьте код и его выполнение перед сохранением.";
+            isMessage = true;
+            showSaveConfirmation = true;
+            return;
+        }
+        if (TrackingSteps.Any(s => string.IsNullOrWhiteSpace(s.Description) || s.LineNumberInCode <= 0 || !s.GetVariableList().Any()))
+        {
+            saveConfirmationMessage = "Ошибка: Для каждого шага отслеживания (Описание, Строка, Переменные) должны быть заполнены.";
+            isMessage = true;
+            showSaveConfirmation = true;
+            return;
+        }
+        var validDefaultInputSetups = DefaultInputSetups
+            .Where(s => !string.IsNullOrWhiteSpace(s.VariableName) && s.LineNumberInCode > 0)
+            .ToList();
+        if (validDefaultInputSetups.Count == 0 || DefaultInputSetups.Any(s => s.LineNumberInCode <= 0 || string.IsNullOrWhiteSpace(s.VariableName)))
+        {
+            saveConfirmationMessage = "Ошибка: Для каждой переменной входных данных (Строка кода, Имя переменной) должны быть указаны.";
+            isMessage = true;
+            showSaveConfirmation = true;
+            return;
+        }
+
+        saveConfirmationMessage = AlgorithmId.HasValue ?
+            $"Вы уверены, что хотите сохранить изменения для алгоритма '{algorithmName}'?" :
+            $"Вы уверены, что хотите создать новый алгоритм '{algorithmName}'?";
+        showSaveConfirmation = true;
+    }
+
+    private async Task ExecuteSaveAlgorithm()
+    {
+        showSaveConfirmation = false;
+        try
+        {
+            if (isLoadingData) return;
+            isLoadingData = true;
+            StateHasChanged();
+
+            bool success;
+            string resultMessage;
+            ClientCreateAlgorithmResponseDto? createdResponse = null;
+
+
+            if (AlgorithmId.HasValue)
+            {
+                success = await AlgorithmService.UpdateAlgorithmAsync(
+                    AlgorithmId.Value, algorithmName, currentCodeContent,
+                    DefaultInputSetups, TrackingSteps, selectedImageFile);
+                resultMessage = success ? "Алгоритм успешно обновлен!" : "Ошибка при обновлении алгоритма.";
+            }
+            else
+            {
+                createdResponse = await AlgorithmService.CreateAlgorithmAsync(
+                    algorithmName, currentCodeContent, DefaultInputSetups, TrackingSteps, selectedImageFile);
+                success = createdResponse != null && createdResponse.AlgoId > 0;
+                resultMessage = success ? $"Алгоритм '{algorithmName}' успешно создан!" : "Ошибка при создании алгоритма.";
+            }
+
+            isLoadingData = false;
+            isMessage = true;
+            saveConfirmationMessage = resultMessage;
+            showSaveConfirmation = true; // Показываем результат
+
+            if (success)
+            {
+                selectedImageFile = null;
+                if (!AlgorithmId.HasValue && createdResponse != null)
+                {
+                    NavigationManager.NavigateTo($"/algorithm-editor/{createdResponse.AlgoId}");
+                }
+                else if (AlgorithmId.HasValue)
+                {
+                    await LoadAlgorithmDataAsync(AlgorithmId.Value);
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            isLoadingData = false;
+            isMessage = true;
+            saveConfirmationMessage = $"Ошибка при сохранении: {ex.Message}";
+            showSaveConfirmation = true;
+        }
+    }
+
+    private void CancelSave()
+    {
+        showSaveConfirmation = false;
+        saveConfirmationMessage = "";
+        isMessage = false;
+    }
+
+    private void ConfirmDeleteAlgorithm(int id, string name)
+    {
+        showDeleteConfirmation = true;
+    }
+
+    private async Task ExecuteDeleteAlgorithm()
+    {
+        showDeleteConfirmation = false;
+        var success = await AlgorithmService.DeleteAlgorithmAsync(AlgorithmId.Value);
+        saveConfirmationMessage = success ? "Алгоритм успешно удален." : "Ошибка при удалении алгоритма.";
+        showSaveConfirmation = true;
+
+        if (success)
+        {
+            NavigateBack();
+        }
+    }
+
+    private void CancelDelete()
+    {
+        showDeleteConfirmation = false;
+    }
+
+
+
+
+    private void NavigateBack() => NavigationManager.NavigateTo("/task-management-editor");
+}

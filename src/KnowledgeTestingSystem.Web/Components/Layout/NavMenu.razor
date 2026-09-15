@@ -1,0 +1,211 @@
+﻿@* Components/Layout/NavMenu.razor *@
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@using KnowledgeTestingSystem.Web.Auth
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="sessions">SKAT</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <AuthorizeView>
+            <Authorized>
+                <div class="admin-profile-items">
+                    <div class="profile-header-nav">Профиль</div>
+                    <div class="profile-photo-nav">
+                        <img src="images/Users.png" alt="Фото профиля" />
+                    </div>
+                    @{
+                        var fullName = context.User.FindFirst("FullName")?.Value ?? context.User.Identity?.Name;
+                        var groupName = context.User.FindFirst("GroupName")?.Value;
+                    }
+                    <div class="profile-info-nav profile-name">@fullName</div>
+                    <div class="profile-info-nav profile-group">@groupName</div>
+                </div>
+                <!-- Навигационные ссылки (зависят от роли) -->
+                <div class="nav-links-group">
+                    @if (context.User.IsInRole("Преподаватель"))
+                    {
+                        <!-- Ссылки для AdminPage -->
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="sessions">
+                                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Главная страница
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="session-editor">
+                                <span class="bi bi-pencil-square-nav-menu" aria-hidden="true"></span> Редактор сессии
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="task-management-editor">
+                                <span class="bi bi-card-list-nav-menu" aria-hidden="true"></span> Редактор заданий
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            @* НОВАЯ ССЫЛКА *@
+                            <NavLink class="nav-link" href="teacher/statistics">
+                                <span class="bi bi-graph-up-nav-menu" aria-hidden="true"></span> Статистика
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="settings">
+                                <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> Настройки
+                            </NavLink>
+                        </div>
+                    }
+                    else if (context.User.IsInRole("Обучающийся"))
+                    {
+                        <!-- Ссылки для UserPage -->
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="sessions">
+                                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Главная страница
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="user/statistics">
+                                <span class="bi bi-bar-chart-line-fill-nav-menu" aria-hidden="true"></span> Статистика
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="settings">
+                                <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> Настройки
+                            </NavLink>
+                        </div>
+                    }
+                </div>
+                <div class="nav-item px-3 mt-auto">
+                    @* mt-auto прижмет кнопку Выход к низу, если nav-links-group не занимает все место *@
+                    <button class="nav-link" @onclick="HandleLogout">
+                        <span class="bi bi-box-arrow-right-nav-menu" aria-hidden="true"></span> Выход (@context.User.Identity?.Name)
+                    </button>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="login">
+                        <span class="bi bi-box-arrow-in-right-nav-menu" aria-hidden="true"></span> Вход
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private string currentUserName = "Загрузка...";
+    private string currentUserGroup = "Загрузка...";
+    private bool _isUserPageContext = false;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        NavigationManager.LocationChanged += OnLocationChanged;
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            UpdateUserInfo(authState.User);
+        }
+        UpdatePageContext(NavigationManager.Uri); // Начальная проверка URL
+    }
+
+    protected override void OnInitialized()
+    {
+        // Начальная проверка URL
+        UpdatePageContext(NavigationManager.Uri);
+        // Подписка на изменение URL
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        UpdatePageContext(e.Location);
+        // Обновить StateHasChanged, чтобы UI перерисовался с новыми ссылками
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdatePageContext(string uri)
+    {
+        var currentPath = new Uri(uri).AbsolutePath;
+        _isUserPageContext = currentPath.Equals("/user", StringComparison.OrdinalIgnoreCase) ||
+                             currentPath.StartsWith("/user/", StringComparison.OrdinalIgnoreCase);
+
+        // Обновляем ФИО и группу в зависимости от контекста (или из Claims)
+        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
+        {
+            UpdateUserInfo(authenticationStateTask.Result.User);
+        }
+    }
+
+    private void UpdateUserInfo(ClaimsPrincipal user)
+    {
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            currentUserName = user.Identity.Name ?? "Пользователь";
+            // currentUserGroup = user.FindFirst(ClaimTypes.GroupSid)?.Value ?? "Группа не указана"; // Пример, если бы группа была в клеймах
+            currentUserGroup = user.IsInRole("Преподаватель") ? "Преподаватели" : (user.IsInRole("Обучающийся") ? "Обучающиеся" : "");
+        }
+        else
+        {
+            currentUserName = "Профиль";
+            currentUserGroup = "";
+        }
+    }
+
+    private bool IsUserPage()
+    {
+        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
+        {
+            var user = authenticationStateTask.Result.User;
+            if (user.Identity != null && user.Identity.IsAuthenticated)
+            {
+                // Логика отображения меню для роли "Обучающийся"
+                return user.IsInRole("Обучающийся");
+            }
+        }
+        return false;
+    }
+
+    private bool IsAdminPage() // По аналогии для админа
+    {
+        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
+        {
+            var user = authenticationStateTask.Result.User;
+            if (user.Identity != null && user.Identity.IsAuthenticated)
+            {
+                return user.IsInRole("Преподаватель");
+            }
+        }
+        return false;
+    }
+
+    private async Task HandleLogout()
+    {
+        // Приводим к CustomAuthenticationStateProvider для вызова MarkUserAsLoggedOut
+        if (AuthenticationStateProvider is CustomAuthenticationStateProvider customAuthStateProvider)
+        {
+            await customAuthStateProvider.MarkUserAsLoggedOut();
+        }
+        else
+        {
+            // Обработка ошибки, если приведение не удалось (не должно случиться при правильной регистрации)
+            Console.WriteLine("Ошибка: Не удалось привести AuthenticationStateProvider к CustomAuthenticationStateProvider при выходе.");
+        }
+        NavigationManager.NavigateTo("/login");
+    }
+
+    // Не забыть отписаться
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

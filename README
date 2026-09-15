@@ -1,0 +1,23 @@
+# Запуск проекта
+
+## Требования
+- .NET SDK 10
+- Docker Desktop
+- dotnet-ef: `dotnet tool install --global dotnet-ef --version 10.*`
+
+## Запуск
+```bash
+git clone <url>
+cd KnowledgeTestingSystem
+docker compose up -d
+dotnet restore
+dotnet ef database update
+dotnet run
+```
+
+## Подключение к БД
+- Host: 127.0.0.1
+- Port: 5432
+- User: admin
+- Password: 12345
+- Database: TestBase

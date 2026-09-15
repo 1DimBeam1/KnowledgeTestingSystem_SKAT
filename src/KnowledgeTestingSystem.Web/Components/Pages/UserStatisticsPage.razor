@@ -1,0 +1,154 @@
+﻿@* Components/Pages/UserStatisticsPage.razor *@
+@page "/user/statistics"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@*attribute [Authorize(Roles = "Обучающийся")] // Доступно только авторизованным обучающимся*@
+
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider // Для получения информации о пользователе
+
+<PageTitle>Моя статистика</PageTitle>
+
+<div class="stats-container">
+    <h3>Статистика успеваемости</h3>
+
+    @if (isLoading)
+    {
+        <p><em>Загрузка статистики...</em></p>
+    }
+    else if (userStatistics == null)
+    {
+        <p><em>Не удалось загрузить статистику.</em></p>
+    }
+    else
+    {
+        <div class="stats-summary">
+            <div class="stats-card">
+                <h4>Завершено сессий</h4>
+                <p class="stats-value">@userStatistics.CompletedSessions</p>
+            </div>
+            <div class="stats-card">
+                <h4>Средний балл</h4>
+                <p class="stats-value">@userStatistics.AverageScore.ToString("F1")</p> @* Форматируем до 1 знака после запятой *@
+            </div>
+            <div class="stats-card">
+                <h4>Время в системе</h4>
+                <p class="stats-value">@FormatTimeSpan(userStatistics.TimeSpentInSystem)</p>
+            </div>
+        </div>
+
+        <h4>Последние пройденные сессии:</h4>
+        @if (userStatistics.RecentSessions.Any())
+        {
+            <table class="table recent-sessions-table">
+                <thead>
+                    <tr>
+                        <th>Название сессии</th>
+                        <th>Дата прохождения</th>
+                        <th>Результат/Балл</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var session in userStatistics.RecentSessions)
+                    {
+                        <tr>
+                            <td>@session.SessionName</td>
+                            <td>@session.CompletionDate.ToShortDateString()</td>
+                            <td>@session.Score</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p><em>Нет информации о недавно пройденных сессиях.</em></p>
+        }
+    }
+    <div class="stats-footer">
+        <button class="btn btn-secondary" @onclick="GoToSessions">К списку сессий</button>
+    </div>
+</div>
+
+@code {
+    private UserStatisticsViewModel? userStatistics;
+    private bool isLoading = true;
+    private string? currentUserName;
+
+    // ViewModel для статистики пользователя
+    public class UserStatisticsViewModel
+    {
+        public int CompletedSessions { get; set; }
+        public double AverageScore { get; set; }
+        public TimeSpan TimeSpentInSystem { get; set; }
+        public List<TopicProgressViewModel> TopicProgress { get; set; } = new List<TopicProgressViewModel>();
+        public List<RecentSessionViewModel> RecentSessions { get; set; } = new List<RecentSessionViewModel>();
+    }
+
+    public class TopicProgressViewModel
+    {
+        public string TopicName { get; set; } = string.Empty;
+        public int ProgressPercentage { get; set; }
+    }
+
+    public class RecentSessionViewModel
+    {
+        public string SessionName { get; set; } = string.Empty;
+        public DateTime CompletionDate { get; set; }
+        public string Score { get; set; } = string.Empty; // Может быть "Зачет" или балл
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity != null && user.Identity.IsAuthenticated)
+        {
+            currentUserName = user.Identity.Name; // Или полное имя из claims
+            // Здесь будет загрузка реальных данных из БД по ID/имени пользователя
+            // А пока используем моковые данные
+            LoadMockStatistics();
+        }
+        else
+        {
+            // Пользователь не аутентифицирован, хотя страница защищена [Authorize]
+            // Этого не должно случиться, но на всякий случай
+            NavigationManager.NavigateTo("/login");
+        }
+        isLoading = false;
+    }
+
+    private void LoadMockStatistics()
+    {
+        // Имитация загрузки данных
+        userStatistics = new UserStatisticsViewModel
+            {
+                CompletedSessions = 5,
+                AverageScore = 85.5,
+                TimeSpentInSystem = new TimeSpan(10, 30, 0), // 10 часов 30 минут
+                TopicProgress = new List<TopicProgressViewModel>
+            {
+                new TopicProgressViewModel { TopicName = "Сортировки", ProgressPercentage = 75 },
+                new TopicProgressViewModel { TopicName = "Поиск данных", ProgressPercentage = 90 },
+                new TopicProgressViewModel { TopicName = "Структуры данных", ProgressPercentage = 60 }
+            },
+                RecentSessions = new List<RecentSessionViewModel>
+            {
+                new RecentSessionViewModel { SessionName = "Контрольная по сортировкам", CompletionDate = DateTime.Now.AddDays(-2), Score = "92/100" },
+                new RecentSessionViewModel { SessionName = "Тренировка: Бинарный поиск", CompletionDate = DateTime.Now.AddDays(-5), Score = "Зачет" },
+                new RecentSessionViewModel { SessionName = "Вводный тест", CompletionDate = DateTime.Now.AddDays(-10), Score = "70/100" }
+            }
+            };
+    }
+
+    private string FormatTimeSpan(TimeSpan ts)
+    {
+        return $"{(int)ts.TotalHours} ч {ts.Minutes} мин";
+    }
+
+    private void GoToSessions()
+    {
+        NavigationManager.NavigateTo("/sessions"); // Предполагаем, что это страница списка сессий
+    }
+}

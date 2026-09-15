@@ -1,0 +1,161 @@
+﻿/* wwwroot/css/TeacherStatisticsPage.css */
+.teacher-stats-container {
+    max-width: 1000px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    color: #333;
+}
+
+    .teacher-stats-container h3, .teacher-stats-container h4 {
+        color: #0d0d29;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .teacher-stats-container h3 {
+        text-align: center;
+        font-size: 1.8em;
+        margin-bottom: 25px;
+    }
+
+    .teacher-stats-container h4 {
+        font-size: 1.3em;
+        margin-top: 25px;
+    }
+
+.view-selector, .group-filter, .student-filter {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    border: 1px solid #e9ecef;
+    display: flex;
+    align-items: center;
+    gap: 15px; /* Пространство между элементами фильтра */
+    flex-wrap: wrap;
+}
+
+    .view-selector label, .group-filter label, .student-filter label {
+        font-weight: bold;
+        margin-right: 5px;
+    }
+
+    .view-selector select, .group-filter select, .student-filter select, .student-filter input[type="text"] {
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
+        min-width: 150px; /* Минимальная ширина для селектов */
+    }
+
+    .student-filter input[type="text"] {
+        flex-grow: 1; /* Поле поиска занимает доступное место */
+    }
+
+
+.stats-table {
+    width: 100%;
+    margin-top: 15px;
+    border-collapse: collapse;
+}
+
+    .stats-table th,
+    .stats-table td {
+        border: 1px solid #ddd;
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: middle;
+    }
+
+    .stats-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+
+.btn-sm { /* Для кнопок "Подробнее" */
+    padding: .25rem .5rem;
+    font-size: .875rem;
+    line-height: 1.5;
+    border-radius: .2rem;
+}
+
+.btn-info {
+    color: #fff;
+    background-color: #17a2b8;
+    border-color: #17a2b8;
+}
+
+    .btn-info:hover {
+        background-color: #138496;
+        border-color: #117a8b;
+    }
+.test-filter {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    border: 1px solid #e9ecef;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+    .test-filter label {
+        font-weight: bold;
+        margin-right: 5px;
+    }
+
+    .test-filter select, .test-filter input[type="text"] {
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
+        min-width: 150px;
+    }
+
+    .test-filter input[type="text"] {
+        flex-grow: 1;
+    }
+
+/* Стили для таблицы */
+.stats-table .text-muted {
+    color: #6c757d;
+    font-size: 0.85em;
+}
+
+.stats-table .text-success {
+    color: #155724;
+    font-weight: bold;
+}
+
+.stats-table .text-danger {
+    color: #721c24;
+    font-weight: bold;
+}
+
+/* Стили для инлайнового прогресс-бара */
+.progress-bar-container-inline {
+    width: 100%;
+    min-width: 100px; /* Чтобы было видно даже при 0% */
+    background-color: rgba(220, 53, 69, 0.2); /* Легкий красный фон (неудачные попытки) */
+    border-radius: 5px;
+    height: 20px;
+    overflow: hidden;
+    position: relative; /* Для позиционирования текста */
+}
+
+.progress-bar-inline {
+    background-color: rgba(40, 167, 69, 0.7); /* Зеленый для удачных */
+    height: 100%;
+    color: white;
+    text-align: center;
+    line-height: 20px;
+    font-size: 0.85em;
+    font-weight: bold;
+    border-radius: 5px 0 0 5px;
+    transition: width 0.5s ease-in-out;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.3); /* Тень для читаемости текста */
+}

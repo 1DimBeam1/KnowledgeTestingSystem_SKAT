@@ -1,0 +1,246 @@
+﻿@* Componenta/Page/PreTestPage.razor *@
+@page "/pre-test/{SessionId:int}"
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext Db 
+
+<PageTitle>Предварительный просмотр сессии</PageTitle>
+
+<div class="ptp-container">
+    @if (isLoading)
+    {
+        <div class="ptp-loading-indicator">
+            <p>Загрузка данных сессии...</p>
+            @* Здесь можно добавить спиннер или другую анимацию загрузки *@
+        </div>
+    }
+    else
+    {
+        <div class="ptp-title-bar">
+            <div class="ptp-session-name">@SessionDisplayName</div> @* Используем новое свойство *@
+            <div class="ptp-time-info">Время на прохождение: @FormattedTimeLimit</div>
+        </div>
+
+        <div class="ptp-body">
+            <div class="ptp-test-selection-area">
+                <div class="ptp-info-label">Задания в сессии:</div>
+                <div class="ptp-test-list-wrapper">
+                    <div class="ptp-test-list">
+                        @if (TasksInSession.Any())
+                        {
+                            @foreach (var task in TasksInSession)
+                            {
+                                <div class="ptp-test-item">
+                                    @task.Name
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="ptp-test-item">Нет заданий в этой сессии</div>
+                        }
+                    </div>
+                    <div class="ptp-scrollbar-mock">
+                        <div class="ptp-scrollbar-thumb-mock"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ptp-options-area">
+                <div class="ptp-test-type-container">
+                    <div class="ptp-label">Тип тестирования</div>
+
+                    @if (!availableTestModes.Any())
+                    {
+                        <p class="text-danger">Для этой сессии не задан тип тестирования.</p>
+                    }
+                    else
+                    {
+                        @if (canSelectControlMode)
+                        {
+                            <div class="ptp-radio-option">
+                                <label for="controlType" class="ptp-custom-radio-label">
+                                    <input type="radio" id="controlType" name="testType"
+                                           checked="@(SelectedTestMode == TestMode.Control)"
+                                           @onchange="@(() => UpdateTestMode(TestMode.Control))" />
+                                    <span class="ptp-custom-radio-outer">
+                                        <span class="ptp-custom-radio-inner"></span>
+                                    </span>
+                                    Контрольное
+                                </label>
+                            </div>
+                        }
+
+                        @if (canSelectTrainingMode)
+                        {
+                            <div class="ptp-radio-option">
+                                <label for="trainingType" class="ptp-custom-radio-label">
+                                    <input type="radio" id="trainingType" name="testType"
+                                           checked="@(SelectedTestMode == TestMode.Training)"
+                                           @onchange="@(() => UpdateTestMode(TestMode.Training))" />
+                                    <span class="ptp-custom-radio-outer">
+                                        <span class="ptp-custom-radio-inner"></span>
+                                    </span>
+                                    Обучающее
+                                </label>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="ptp-footer-action">
+            <button class="ptp-button ptp-button-back" @onclick="GoBack">Назад</button>
+            <button class="ptp-button ptp-button-start" @onclick="StartActualTest"
+            disabled="@(!TasksInSession.Any())">
+                Начать
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int SessionId { get; set; }
+
+    private string SessionDisplayName { get; set; } = string.Empty; // Для отображения имени/ID сессии
+    private string FormattedTimeLimit { get; set; } = "Не установлено"; // Время на прохождение
+    private bool isLoading = true;
+
+    // Переименовано для ясности
+    public class SessionTaskItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private List<SessionTaskItem> TasksInSession { get; set; } = new List<SessionTaskItem>();
+    // SelectedTestId больше не нужен
+    // private int? SelectedTestId { get; set; }
+
+    public enum TestMode { Training, Control }
+    private TestMode SelectedTestMode { get; set; } = TestMode.Training;
+
+    private List<TestMode> availableTestModes = new List<TestMode>();
+    private bool canSelectTrainingMode => availableTestModes.Contains(TestMode.Training);
+    private bool canSelectControlMode => availableTestModes.Contains(TestMode.Control);
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        await LoadSessionDetailsAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadSessionDetailsAsync()
+    {
+        try
+        {
+            // 1. Загружаем информацию о сессии из Db
+            var session = await Db.Sessions
+                                    .FirstOrDefaultAsync(s => s.SessionId == SessionId);
+
+            if (session == null)
+            {
+                SessionDisplayName = $"Сессия с ID {SessionId} не найдена.";
+                TasksInSession = new List<SessionTaskItem>(); // Пустой список
+                // Можно добавить навигацию на страницу ошибки или назад
+                return;
+            }
+
+            SessionDisplayName = $"Сессия тестирования: {(session.SessionType?.ToString() ?? "N/A")} (ID: {session.SessionId})"; // Пример имени
+
+            // Форматируем время. Предположим, у Session есть свойство TimeLimit в секундах или TimeSpan
+            // Если у вас TimeLimit - это строка типа "01:30:00", то просто присваиваем
+            // Если это int (секунды):
+            TimeSpan timeSpan = session.Time;
+            FormattedTimeLimit = $"{timeSpan.Hours:D2}:{timeSpan.Minutes:D2}:{timeSpan.Seconds:D2}";
+
+            availableTestModes.Clear();
+            if (session.SessionType.HasValue)
+            {
+                var st = session.SessionType.Value.ToString();
+                if (st.Contains("Обучающая", StringComparison.OrdinalIgnoreCase) || st.Contains("Practice", StringComparison.OrdinalIgnoreCase))
+                {
+                    availableTestModes.Add(TestMode.Training);
+                }
+                if (st.Contains("Контрольная", StringComparison.OrdinalIgnoreCase) || st.Contains("Exam", StringComparison.OrdinalIgnoreCase))
+                {
+                    availableTestModes.Add(TestMode.Control);
+                }
+            }
+
+            // Устанавливаем режим по умолчанию в первый доступный
+            if (availableTestModes.Any())
+            {
+                SelectedTestMode = availableTestModes.First(); // Например, Control будет первым, если он есть
+            }
+            else
+            {
+                // Если по какой-то причине ни один режим не определен,
+                // можно установить дефолтный или показать ошибку
+                SelectedTestMode = TestMode.Control; // Запасной вариант
+                Console.WriteLine($"Предупреждение: для сессии {SessionId} не удалось определить доступные режимы. Установлен режим по умолчанию.");
+            }
+
+            // 2. Загружаем ID тестов, связанных с этой сессией, из Db
+            var testIdsInSession = await Db.SessionTests
+                                        .Where(st => st.SessionId == SessionId)
+                                        .Select(st => st.TestId)
+                                        .ToListAsync();
+
+            if (!testIdsInSession.Any())
+            {
+                TasksInSession = new List<SessionTaskItem>();
+                // Сообщение о том, что нет заданий, уже есть в разметке
+                return;
+            }
+
+            // 3. Загружаем детали этих тестов (названия) из Db
+            var testsDetails = await Db.Tests // У вас DbSet называется Tests
+                                        .Where(t => testIdsInSession.Contains(t.TestId))
+                                        .Select(t => new SessionTaskItem { Id = t.TestId, Name = t.TestName })
+                                        .ToListAsync();
+
+            TasksInSession = testsDetails;
+
+
+        }
+        catch (Exception ex)
+        {
+            // Обработка ошибок загрузки данных
+            Console.WriteLine($"Ошибка при загрузке деталей сессии: {ex.Message}");
+            SessionDisplayName = "Ошибка загрузки данных сессии";
+            TasksInSession = new List<SessionTaskItem>();
+            // Можно установить FormattedTimeLimit в "Ошибка" или оставить как есть
+        }
+    }
+
+
+    private void UpdateTestMode(TestMode mode)
+    {
+        SelectedTestMode = mode;
+        Console.WriteLine($"Выбран режим тестирования: {SelectedTestMode}");
+    }
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo("/sessions");
+        Console.WriteLine("Нажата кнопка 'Назад'");
+    }
+
+    private void StartActualTest()
+    {
+        if (TasksInSession.Any())
+        {
+            Console.WriteLine($"Нажата кнопка 'Начать' для сессии {SessionId}, режим: {SelectedTestMode}");
+            NavigationManager.NavigateTo($"/actual-test/{SessionId}?mode={SelectedTestMode}");
+        }
+        else
+        {
+            Console.WriteLine("Ошибка: Нет заданий в сессии для начала.");
+        }
+    }
+}

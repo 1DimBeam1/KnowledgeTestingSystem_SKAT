@@ -1,0 +1,252 @@
+﻿@page "/task-management-editor"
+@inject NavigationManager NavigationManager
+@inject AlgorithmApiService AlgorithmService
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@using KnowledgeTestingSystem.Web.Services
+
+<PageTitle>Список заданий и алгоритмов</PageTitle>
+
+<div class="task-mgmt-container">
+    <div class="task-mgmt-column">
+        <div class="task-mgmt-header">
+            Список алгоритмов
+            <button class="btn btn-add-new" @onclick="NavigateToAddAlgorithm">Добавить алгоритм</button>
+        </div>
+        <div class="task-mgmt-search-bar">
+            <input type="text" placeholder="Поиск алгоритма..." @bind="algorithmSearchTerm" @bind:event="oninput" />
+        </div>
+        <div class="task-mgmt-list">
+            @if (isLoadingAlgorithms)
+            {
+                <div class="task-mgmt-list-item-empty">Загрузка алгоритмов...</div>
+            }
+            else if (FilteredAlgorithms.Any())
+            {
+                foreach (var algo in FilteredAlgorithms)
+                {
+                    <div class="task-mgmt-list-item">
+                        <span class="icon-delete" title="Удалить" @onclick="() => ConfirmDeleteAlgorithm(algo.Id, algo.Name)">❌</span>
+                        <span class="item-name">@algo.Name</span>
+                        <span class="icon-edit" title="Редактировать" @onclick="() => EditAlgorithm(algo.Id)">✏️</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="task-mgmt-list-item-empty">Нет добавленных алгоритмов.</div>
+            }
+        </div>
+    </div>
+
+    <div class="task-mgmt-column">
+        <div class="task-mgmt-header">
+            Список тестовых заданий
+            <button class="btn btn-add-new" @onclick="NavigateToAddTask">Добавить тест</button>
+        </div>
+        <div class="task-mgmt-search-bar">
+            <input type="text" placeholder="Поиск теста..." @bind="taskSearchTerm" @bind:event="oninput" />
+        </div>
+        <div class="task-mgmt-list">
+            @if (isLoadingTasks)
+            {
+                <div class="task-mgmt-list-item-empty">Загрузка тестов...</div>
+            }
+            else if (FilteredTasks.Any())
+            {
+                foreach (var task in FilteredTasks)
+                {
+                    <div class="task-mgmt-list-item">
+                        <span class="icon-delete" title="Удалить" @onclick="() => ConfirmDeleteTask(task.Id, task.Name)">❌</span>
+                        <span class="item-name">@task.Name</span>
+                        <span class="difficulty-tag">Сложность = @task.Difficult</span>
+                        <span class="icon-edit" title="Редактировать" @onclick="() => EditTask(task.Id)">✏️</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="task-mgmt-list-item-empty">Нет добавленных тестов.</div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для подтверждения удаления алгоритма -->
+@if (showDeleteAlgorithmConfirmation)
+{
+    <div class="modal-overlay" @onclick="CancelDeleteAlgorithm">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <h4>Подтверждение удаления</h4>
+            <p>Вы уверены, что хотите удалить алгоритм "@deletingAlgorithmName"?</p>
+            <div class="modal-actions">
+                <button class="modal-btn btn-secondary" @onclick="CancelDeleteAlgorithm">Отмена</button>
+                <button class="modal-btn btn-danger" @onclick="ExecuteDeleteAlgorithm">Удалить</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Модальное окно для подтверждения удаления теста -->
+@if (showDeleteTaskConfirmation)
+{
+    <div class="modal-overlay" @onclick="CancelDeleteTask">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <h4>Подтверждение удаления</h4>
+            <p>Вы уверены, что хотите удалить тест "@deletingTaskName"?</p>
+            <div class="modal-actions">
+                <button class="modal-btn btn-secondary" @onclick="CancelDeleteTask">Отмена</button>
+                <button class="modal-btn btn-danger" @onclick="ExecuteDeleteTask">Удалить</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string algorithmSearchTerm = "";
+    private string taskSearchTerm = "";
+    private bool isLoadingAlgorithms = true;
+    private bool isLoadingTasks = true;
+
+    private List<AlgorithmViewModel> AllAlgorithms { get; set; } = new();
+    private List<TaskViewModel> AllTasks { get; set; } = new();
+
+    private IEnumerable<AlgorithmViewModel> FilteredAlgorithms =>
+        AllAlgorithms.Where(a => string.IsNullOrWhiteSpace(algorithmSearchTerm) || a.Name.Contains(algorithmSearchTerm, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<TaskViewModel> FilteredTasks =>
+        AllTasks.Where(t => string.IsNullOrWhiteSpace(taskSearchTerm) || t.Name.Contains(taskSearchTerm, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Загрузка алгоритмов
+        isLoadingAlgorithms = true;
+        var algorithmsFromApi = await AlgorithmService.GetAlgorithmsListAsync();
+        if (algorithmsFromApi != null)
+        {
+            AllAlgorithms = algorithmsFromApi.Select(dto => new AlgorithmViewModel { Id = dto.AlgoId, Name = dto.AlgorithmName ?? "Без имени" }).ToList();
+        }
+        else
+        {
+            AllAlgorithms = new List<AlgorithmViewModel>();
+            Console.WriteLine("TaskManagementEditorPage: Failed to load algorithms or list is empty.");
+        }
+        isLoadingAlgorithms = false;
+
+        // Загрузка тестов
+        isLoadingTasks = true;
+        var testsFromApi = await AlgorithmService.GetTestsListAsync();
+        if (testsFromApi != null)
+        {
+            AllTasks = testsFromApi.Select(t => new TaskViewModel { Id = t.TestId, Name = t.TestName ?? "Без имени", Difficult = t.Difficult}).ToList();
+        }
+        else
+        {
+            AllTasks = new List<TaskViewModel>();
+            Console.WriteLine("TaskManagementEditorPage: Failed to load tests or list is empty.");
+        }
+        isLoadingTasks = false;
+
+        await base.OnInitializedAsync();
+    }
+
+    private void NavigateToAddAlgorithm()
+    {
+        NavigationManager.NavigateTo("/algorithm-editor");
+    }
+
+    private void NavigateToAddTask()
+    {
+        NavigationManager.NavigateTo("/task-editor");
+    }
+
+    private void EditAlgorithm(int id)
+    {
+        NavigationManager.NavigateTo($"/algorithm-editor/{id}");
+    }
+
+    private void EditTask(int id)
+    {
+        NavigationManager.NavigateTo($"/task-editor/{id}");
+    }
+
+    // Логика удаления алгоритма
+    private bool showDeleteAlgorithmConfirmation = false;
+    private int deletingAlgorithmId;
+    private string? deletingAlgorithmName;
+
+    private void ConfirmDeleteAlgorithm(int id, string? name)
+    {
+        deletingAlgorithmId = id;
+        deletingAlgorithmName = name ?? "Неизвестный алгоритм";
+        showDeleteAlgorithmConfirmation = true;
+    }
+
+    private void CancelDeleteAlgorithm()
+    {
+        showDeleteAlgorithmConfirmation = false;
+    }
+
+    private async Task ExecuteDeleteAlgorithm()
+    {
+        bool success = await AlgorithmService.DeleteAlgorithmAsync(deletingAlgorithmId);
+        if (success)
+        {
+            AllAlgorithms.RemoveAll(a => a.Id == deletingAlgorithmId);
+            Console.WriteLine($"Алгоритм {deletingAlgorithmName} (ID: {deletingAlgorithmId}) удален.");
+        }
+        else
+        {
+            Console.WriteLine($"Ошибка при удалении алгоритма {deletingAlgorithmName} (ID: {deletingAlgorithmId}).");
+        }
+        showDeleteAlgorithmConfirmation = false;
+        StateHasChanged();
+    }
+
+    // Логика удаления теста
+    private bool showDeleteTaskConfirmation = false;
+    private int deletingTaskId;
+    private string? deletingTaskName;
+
+    private void ConfirmDeleteTask(int id, string? name)
+    {
+        deletingTaskId = id;
+        deletingTaskName = name ?? "Неизвестный тест";
+        showDeleteTaskConfirmation = true;
+    }
+
+    private void CancelDeleteTask()
+    {
+        showDeleteTaskConfirmation = false;
+    }
+
+    private async Task ExecuteDeleteTask()
+    {
+        bool success = await AlgorithmService.DeleteTestAsync(deletingTaskId);
+        if (success)
+        {
+            AllTasks.RemoveAll(t => t.Id == deletingTaskId);
+            Console.WriteLine($"Тест {deletingTaskName} (ID: {deletingTaskId}) удален.");
+        }
+        else
+        {
+            Console.WriteLine($"Ошибка при удалении теста {deletingTaskName} (ID: {deletingTaskId}).");
+        }
+        showDeleteTaskConfirmation = false;
+        StateHasChanged();
+    }
+
+    // ViewModel классы
+    public class AlgorithmViewModel
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class TaskViewModel
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public float Difficult { get; set; } = 0.5f;
+    }
+}

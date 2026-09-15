@@ -1,0 +1,12 @@
+﻿@* Shared/RedirectToLogin.razor *@
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Для Blazor Server или интерактивных компонент на сервере, forceLoad: true может быть не нужен
+        // или даже вреден, если вы хотите сохранить состояние SPA.
+        // Попробуйте сначала без forceLoad: true.
+        NavigationManager.NavigateTo("login"/*, forceLoad: true*/);
+    }
+}

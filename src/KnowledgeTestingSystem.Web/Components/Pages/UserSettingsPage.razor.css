@@ -1,0 +1,90 @@
+﻿/* wwwroot/css/UserSettingsPage.css */
+.settings-container {
+    max-width: 700px;
+    margin: 20px auto;
+    padding: 25px;
+    background-color: #f8f9fa; /* Светлый фон */
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    color: #212529; /* Темный текст */
+}
+
+    .settings-container h3 {
+        text-align: center;
+        margin-bottom: 25px;
+        color: #0d0d29; /* Темно-синий заголовок, как в вашем проекте */
+    }
+
+.form-group {
+    margin-bottom: 1.25rem;
+}
+
+    .form-group label {
+        display: block;
+        margin-bottom: .5rem;
+        font-weight: 500;
+    }
+
+.form-control { /* Стиль для input, textarea, select из Bootstrap, но можно определить свои */
+    display: block;
+    width: 100%;
+    padding: .5rem .75rem;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+}
+
+    .form-control:focus {
+        color: #495057;
+        background-color: #fff;
+        border-color: #80bdff;
+        outline: 0;
+        box-shadow: 0 0 0 .2rem rgba(0,123,255,.25);
+    }
+
+.settings-container hr {
+    margin-top: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.settings-container h4 {
+    margin-bottom: 1rem;
+    color: #1a1a50; /* Синий для подзаголовков */
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: #1a1a50; /* Синяя кнопка */
+    border-color: #1a1a50;
+}
+
+    .btn-primary:hover {
+        background-color: #0d0d29;
+        border-color: #0a0a23;
+    }
+
+.alert {
+    padding: .75rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: .25rem;
+}
+
+.alert-success {
+    color: #155724;
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+
+.alert-danger {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+}

@@ -1,0 +1,95 @@
+﻿@page "/login"
+@using KnowledgeTestingSystem.Web.Auth
+@using KnowledgeTestingSystem.Web.Components.Layout
+@using KnowledgeTestingSystem.Web.Services
+@layout EmptyLayout
+@rendermode InteractiveServer
+
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Вход</PageTitle>
+
+<h3>Система Тестирования SKAT</h3>
+<p>Пожалуйста, войдите в систему.</p>
+
+<div class="login-container">
+    <h3>Вход в систему</h3>
+    <EditForm Model="loginModel" OnValidSubmit="HandleLogin" FormName="loginForm">
+        <DataAnnotationsValidator />
+        @*<ValidationSummary />*@ @* Можно раскомментировать, если есть ошибки валидации модели *@
+
+        <div class="form-group">
+            <label for="username">Логин:</label>
+            <InputText id="username" class="form-control" @bind-Value="loginModel.Username" />
+            <ValidationMessage For="@(() => loginModel.Username)" />
+        </div>
+        <div class="form-group">
+            <label for="password">Пароль:</label>
+            <InputText id="password" type="password" class="form-control" @bind-Value="loginModel.Password" />
+            <ValidationMessage For="@(() => loginModel.Password)" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-2">@errorMessage</div>
+        }
+
+        <button type="submit" class="btn btn-primary mt-3">Войти</button>
+    </EditForm>
+</div>
+
+@code {
+    private LoginModel loginModel = new LoginModel();
+    private string? errorMessage;
+
+    private async Task HandleLogin()
+    {
+        errorMessage = null;
+        var user = await AuthService.ValidateUserAsync(loginModel.Username, loginModel.Password);
+
+        if (user != null)
+        {
+            // Теперь нужно привести AuthenticationStateProvider к вашему кастомному типу,
+            // чтобы вызвать специфичные для него методы.
+            if (AuthenticationStateProvider is CustomAuthenticationStateProvider customAuthStateProvider)
+            {
+                await customAuthStateProvider.MarkUserAsAuthenticated(user); // Передаем весь объект user
+            }
+            else
+            {
+                // Это не должно произойти, если вы правильно зарегистрировали сервис,
+                // но на всякий случай можно добавить обработку.
+                errorMessage = "Ошибка конфигурации провайдера аутентификации.";
+                return;
+            }
+
+            if (user.Role == "Преподаватель")
+            {
+                NavigationManager.NavigateTo("/sessions"); // На AdminPage (предположим, это "/")
+            }
+            else if (user.Role == "Обучающийся")
+            {
+                NavigationManager.NavigateTo("/sessions"); // На UserPage
+            }
+            else
+            {
+                errorMessage = "Неизвестная роль пользователя.";
+            }
+        }
+        else
+        {
+            errorMessage = "Неверный логин или пароль.";
+        }
+    }
+
+    public class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Введите логин")]
+        public string Username { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Введите пароль")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

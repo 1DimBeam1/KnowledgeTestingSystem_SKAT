@@ -1,0 +1,528 @@
+﻿@* Components/Pages/NewSessionEditorPage.razor (или как вы назвали файл) *@
+@page "/session-editor"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject KnowledgeTestingSystem.Web.Data.KnowledgeTestingDbContext Db
+@using Microsoft.EntityFrameworkCore
+@using KnowledgeTestingSystem.Web.Data.Models
+@using System.ComponentModel.DataAnnotations
+
+<link href="css/NewSessionEditorPage.css" rel="stylesheet" />
+
+<PageTitle>Создание Сессии Тестирования</PageTitle>
+
+<EditForm Model="sessionCreationModel" OnValidSubmit="HandleCreateSession" FormName="newSessionForm">
+    <DataAnnotationsValidator />
+    @* <ValidationSummary /> *@
+
+    <div class="nse-main-container">
+        @* Название сессии УДАЛЕНО *@
+
+        <div class="nse-content-area">
+            <!-- Левая Колонка: Алгоритмы и Тесты -->
+            <div class="nse-left-column">
+                <div class="nse-section">
+                    <label class="nse-section-label">Список алгоритмов для сессии тестирования</label>
+                    <div class="nse-algorithm-list">
+                        @if (sessionCreationModel.AlgorithmConfigurations.Any())
+                        {
+                            @foreach (var algoConfigVM in sessionCreationModel.AlgorithmConfigurations)
+                            {
+                                <div class="nse-algorithm-item" @onclick="async () => await SelectAlgorithmAndLoadTestsIfNeeded(algoConfigVM)" style="cursor:pointer;">
+                                    <span class="nse-algorithm-name">@algoConfigVM.AlgorithmName</span>
+                                    <div class="nse-test-count-selector">
+                                        <button type="button" class="nse-count-btn" @onclick="async () => await DecrementTestCount(algoConfigVM)" @onclick:stopPropagation="true" disabled="@(algoConfigVM.TestCount <= 0)">-</button>
+                                        <InputNumber @bind-Value="algoConfigVM.TestCount" class="nse-test-count-input" min="0" max="15" @onclick:stopPropagation="true" @oninput="async (ChangeEventArgs e) => await HandleTestCountInput(e, algoConfigVM)" />
+                                        <button type="button" class="nse-count-btn" @onclick="async () => await IncrementTestCount(algoConfigVM)" @onclick:stopPropagation="true" disabled="@(algoConfigVM.TestCount >= 15)">+</button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <p><em>Нет доступных алгоритмов для выбора.</em></p>
+                        }
+                    </div>
+                </div>
+
+                <div class="nse-section">
+                    <label class="nse-section-label">Список тестов для алгоритма: (@selectedAlgorithmForTestList?.AlgorithmName ? "Выберите алгоритм")</label>
+                    <div class="nse-test-selection-list">
+                        @if (isLoadingTests)
+                        {
+                            <p><em>Загрузка тестов...</em></p>
+                        }
+                        else if (selectedAlgorithmForTestList != null && selectedAlgorithmForTestList.TestCount > 0 && selectedAlgorithmForTestList.ConfiguredTests.Any())
+                        {
+                            @foreach (var testConfig in selectedAlgorithmForTestList.ConfiguredTests)
+                            {
+                                <div class="nse-test-selection-item">
+                                    <InputCheckbox @bind-Value="testConfig.IsIncluded" class="nse-custom-checkbox" id={`test-cb-${testConfig.TestId}`} />
+                                    <label for={`test-cb-${testConfig.TestId}`} class="nse-test-name">@testConfig.TestName</label>
+
+@*                                     <div class="nse-test-inclusion-options">
+                                        <InputRadioGroup @bind-Value="testConfig.InclusionMode">
+                                            <div class="nse-radio-inline">
+                                                <InputRadio Value="TestInclusionMode.Reserve" id={`mode-reserve-${testConfig.TestId}`} />
+                                                <label for={`mode-reserve-${testConfig.TestId}`}>Резерв</label>
+                                            </div>
+                                            <div class="nse-radio-inline">
+                                                <InputRadio Value="TestInclusionMode.Garant" id={`mode-garant-${testConfig.TestId}`} />
+                                                <label for={`mode-garant-${testConfig.TestId}`}>Гарант</label>
+                                            </div>
+                                        </InputRadioGroup>
+                                    </div> *@
+                                </div>
+                            }
+                        }
+                        else if (selectedAlgorithmForTestList != null && selectedAlgorithmForTestList.TestCount > 0 && !selectedAlgorithmForTestList.ConfiguredTests.Any() && !isLoadingTests)
+                        {
+                            <p><em>Нет тестов для выбранного алгоритма.</em></p>
+                        }
+                        else if (selectedAlgorithmForTestList != null && selectedAlgorithmForTestList.TestCount == 0)
+                        {
+                            <p><em>Укажите количество тестов (>0) для этого алгоритма, чтобы отобразить их.</em></p>
+                        }
+                        else
+                        {
+                            <p><em>Кликните по названию алгоритма выше и укажите количество тестов (>0), чтобы увидеть список его тестов.</em></p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Правая Колонка: Параметры Сессии -->
+            <div class="nse-right-column">
+                <div class="nse-form-group">
+                    <label class="nse-label">Дата проведения</label>
+                    <div class="nse-date-inputs">
+                        <InputDate @bind-Value="sessionCreationModel.StartDate" class="nse-date-input" />
+                        <span>-</span>
+                        <InputDate @bind-Value="sessionCreationModel.EndDate" class="nse-date-input" />
+                    </div>
+                    <ValidationMessage For="@(() => sessionCreationModel.StartDate)" />
+                    <ValidationMessage For="@(() => sessionCreationModel.EndDate)" />
+                </div>
+
+                <div class="nse-form-group">
+                    <label class="nse-label">Тип тестирования</label>
+                    <div class="nse-checkbox-group-column">
+                        <div class="nse-checkbox-option">
+                            <InputCheckbox @bind-Value="sessionCreationModel.IsControlType" id="typeControlCb" class="nse-custom-checkbox" />
+                            <label for="typeControlCb">Тестирование (Контрольное)</label>
+                        </div>
+                        <div class="nse-checkbox-option">
+                            <InputCheckbox @bind-Value="sessionCreationModel.IsTrainingType" id="typeTrainingCb" class="nse-custom-checkbox" />
+                            <label for="typeTrainingCb">Обучение</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="nse-form-group">
+                    <label class="nse-label">Время на выполнение</label>
+                    <div class="nse-time-inputs">
+                        <InputNumber @bind-Value="sessionCreationModel.DurationHours" min="0" class="nse-time-input" placeholder="ч" /> ч
+                    </div>
+                    <div class="nse-time-inputs">
+                        <InputNumber @bind-Value="sessionCreationModel.DurationMinutes" min="0" max="60" class="nse-time-input" placeholder="м" /> м
+                    </div>
+                    <div class="nse-time-inputs">
+                        <InputNumber @bind-Value="sessionCreationModel.DurationSeconds" min="0" max="60" class="nse-time-input" placeholder="с" /> с
+                    </div>
+                </div>
+
+                <div class="nse-section">
+                    <label class="nse-section-label">Список групп</label>
+                    <div class="nse-group-selection-list">
+                        @if (availableGroupsForSelection.Any())
+                        {
+                            @foreach (var groupVM in availableGroupsForSelection)
+                            {
+                                <div class="nse-group-selection-item">
+                                    <InputCheckbox @bind-Value="groupVM.IsSelected" class="nse-custom-checkbox" id={`group-cb-${groupVM.GroupId}`} />
+                                    <label for={`group-cb-${groupVM.GroupId}`}>@groupVM.GroupName</label>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <p><em>Нет доступных групп.</em></p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nse-footer-actions">
+            <button type="button" class="nse-button nse-button-back" @onclick="GoBack">Назад</button>
+            <button type="submit" class="nse-button nse-button-create" disabled="@isSaving">
+                @if (isSaving)
+                {
+                    <span class="spinner-border spinner-border-sm"></span>
+                }
+                Создать
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(formMessage))
+        {
+            <div class="alert @(isError ? "alert-danger" : "alert-success") mt-3">@formMessage</div>
+        }
+    </div>
+</EditForm>
+
+@code {
+    public class SessionCreationModel
+    {
+        // SessionName УДАЛЕНО
+        public List<AlgorithmConfigViewModel> AlgorithmConfigurations { get; set; } = new List<AlgorithmConfigViewModel>();
+        [Required(ErrorMessage = "Дата начала обязательна.")]
+        public DateTime? StartDate { get; set; } = DateTime.Today;
+        public DateTime? EndDate { get; set; } = DateTime.Today.AddDays(7);
+        public bool IsControlType { get; set; } = true;
+        public bool IsTrainingType { get; set; } = false;
+        public int? DurationHours { get; set; }
+        public int? DurationMinutes { get; set; }
+        public int? DurationSeconds { get; set; }
+    }
+
+    public class AlgorithmConfigViewModel
+    {
+        public int AlgorithmId { get; set; }
+        public string AlgorithmName { get; set; } = string.Empty;
+        [Range(0, 15, ErrorMessage = "Количество тестов от 0 до 15.")]
+        public int TestCount { get; set; } = 0;
+        public List<TestConfigViewModel> ConfiguredTests { get; set; } = new List<TestConfigViewModel>();
+    }
+
+    public enum TestInclusionMode { Reserve, Garant }
+
+    public class TestConfigViewModel
+    {
+        public int TestId { get; set; }
+        public string TestName { get; set; } = string.Empty;
+        public bool IsIncluded { get; set; }
+        public TestInclusionMode InclusionMode { get; set; } = TestInclusionMode.Reserve;
+    }
+
+    public class GroupViewModelForSelection
+    {
+        public int GroupId { get; set; }
+        public string GroupName { get; set; } = string.Empty;
+        public bool IsSelected { get; set; }
+    }
+
+    private SessionCreationModel sessionCreationModel = new SessionCreationModel();
+    private List<Algorithm> availableAlgorithmsDb = new List<Algorithm>();
+    private AlgorithmConfigViewModel? selectedAlgorithmForTestList;
+    // Удаляем testsForSelectedAlgorithm, будем использовать selectedAlgorithmForTestList.ConfiguredTests
+    private List<GroupViewModelForSelection> availableGroupsForSelection = new List<GroupViewModelForSelection>();
+
+    private bool isLoading = true; // Общий флаг загрузки для начальных данных
+    private bool isLoadingTests = false; // Флаг для загрузки списка тестов
+    private bool isSaving = false;
+    private string? formMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        await LoadInitialData();
+        isLoading = false;
+    }
+
+    private async Task LoadInitialData()
+    {
+        try
+        {
+            availableAlgorithmsDb = await Db.Algorithms.OrderBy(a => a.AlgoName).ToListAsync();
+            sessionCreationModel.AlgorithmConfigurations = availableAlgorithmsDb
+                .Select(a => new AlgorithmConfigViewModel { AlgorithmId = a.AlgoId, AlgorithmName = a.AlgoName, TestCount = 0 })
+                .ToList();
+
+            var groupsFromDb = await Db.Groups.OrderBy(g => g.Name).ToListAsync();
+            availableGroupsForSelection = groupsFromDb
+                .Where(g => g.GroupId != 0)
+                .Select(g => new GroupViewModelForSelection { GroupId = g.GroupId, GroupName = g.Name, IsSelected = false })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            formMessage = "Ошибка загрузки начальных данных: " + ex.Message;
+            isError = true;
+        }
+    }
+
+    private async Task SelectAlgorithmAndLoadTestsIfNeeded(AlgorithmConfigViewModel algoConfigVM)
+    {
+        if (algoConfigVM == null) return;
+
+        bool needsUiUpdate = false;
+
+        if (selectedAlgorithmForTestList?.AlgorithmId != algoConfigVM.AlgorithmId)
+        {
+            selectedAlgorithmForTestList = algoConfigVM;
+            needsUiUpdate = true;
+        }
+
+        if (selectedAlgorithmForTestList != null) // Убедимся, что selectedAlgorithmForTestList установлен
+        {
+            if (selectedAlgorithmForTestList.TestCount > 0 && !selectedAlgorithmForTestList.ConfiguredTests.Any())
+            {
+                isLoadingTests = true;
+                if (!needsUiUpdate) StateHasChanged(); // Обновить UI для спиннера, если еще не было
+                needsUiUpdate = true;
+
+                var testsFromDb = await Db.Tests
+                                    .Where(t => t.AlgoId == selectedAlgorithmForTestList.AlgorithmId)
+                                    .OrderBy(t => t.TestName)
+                                    .ToListAsync();
+                selectedAlgorithmForTestList.ConfiguredTests = testsFromDb.Select(t => new TestConfigViewModel
+                    {
+                        TestId = t.TestId,
+                        TestName = t.TestName,
+                        IsIncluded = false,
+                        InclusionMode = TestInclusionMode.Reserve
+                    }).ToList();
+                isLoadingTests = false;
+            }
+            else if (selectedAlgorithmForTestList.TestCount == 0 && selectedAlgorithmForTestList.ConfiguredTests.Any())
+            {
+                selectedAlgorithmForTestList.ConfiguredTests.Clear();
+                needsUiUpdate = true;
+            }
+        }
+
+
+        if (needsUiUpdate)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleTestCountChange(AlgorithmConfigViewModel algoConfigVM)
+    {
+        // Если этот алгоритм выбран для отображения списка тестов,
+        // или если его TestCount > 0 и тесты для него еще не загружены (на случай если кликнули + для невыбранного)
+        if (selectedAlgorithmForTestList?.AlgorithmId == algoConfigVM.AlgorithmId || (algoConfigVM.TestCount > 0 && !algoConfigVM.ConfiguredTests.Any()))
+        {
+            await SelectAlgorithmAndLoadTestsIfNeeded(algoConfigVM);
+        }
+        else
+        {
+            StateHasChanged(); // Просто обновить счетчик
+        }
+    }
+
+
+    private async Task DecrementTestCount(AlgorithmConfigViewModel algoConfigVM)
+    {
+        if (algoConfigVM.TestCount > 0)
+        {
+            algoConfigVM.TestCount--;
+            await HandleTestCountChange(algoConfigVM);
+        }
+    }
+
+    private async Task IncrementTestCount(AlgorithmConfigViewModel algoConfigVM)
+    {
+        if (algoConfigVM.TestCount < 15)
+        {
+            algoConfigVM.TestCount++;
+            await HandleTestCountChange(algoConfigVM);
+        }
+    }
+
+    // Вызывается при изменении значения в InputNumber напрямую
+    private async Task HandleTestCountInput(ChangeEventArgs e, AlgorithmConfigViewModel algoConfigVM)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int newCount))
+        {
+            newCount = Math.Clamp(newCount, 0, 15); // Ограничиваем значение
+            if (algoConfigVM.TestCount != newCount) // Чтобы не вызывать лишний раз, если значение не изменилось
+            {
+                algoConfigVM.TestCount = newCount;
+                await HandleTestCountChange(algoConfigVM);
+            }
+        }
+    }
+
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo("/sessions"); // Предполагаем, что это страница списка сессий
+    }
+
+    private async Task HandleCreateSession()
+    {
+        isSaving = true;
+        formMessage = null;
+        isError = false;
+        StateHasChanged();
+
+        int nextSessionId = 0;
+        if (await Db.Sessions.AnyAsync()) // Проверяем, есть ли вообще записи
+        {
+            nextSessionId = await Db.Sessions.MaxAsync(s => s.SessionId) + 1;
+        }
+        else
+        {
+            nextSessionId = 1; // Первая запись
+        }
+
+        if (sessionCreationModel.AlgorithmConfigurations.All(ac => ac.TestCount == 0))
+        {
+            formMessage = "Добавьте хотя бы один тест в сессию (укажите количество тестов для алгоритма > 0).";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+        if (availableGroupsForSelection.All(g => !g.IsSelected))
+        {
+            formMessage = "Выберите хотя бы одну группу.";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+        if (!sessionCreationModel.IsControlType && !sessionCreationModel.IsTrainingType)
+        {
+            formMessage = "Выберите хотя бы один тип тестирования.";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+        if (!sessionCreationModel.StartDate.HasValue) // Это должно ловиться [Required], но для надежности
+        {
+            formMessage = "Укажите дату начала сессии.";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+        if (!sessionCreationModel.EndDate.HasValue) // <<<<<<< НОВАЯ ПРОВЕРКА, если DateFinish в БД не nullable
+        {
+            formMessage = "Укажите дату окончания сессии.";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+        if (sessionCreationModel.EndDate.Value < sessionCreationModel.StartDate.Value)
+        {
+            formMessage = "Дата окончания не может быть раньше даты начала.";
+            isError = true; isSaving = false; StateHasChanged(); return;
+        }
+
+
+        List<string> sessionTypes = new List<string>();
+        if (sessionCreationModel.IsControlType) sessionTypes.Add("Контрольная");
+        if (sessionCreationModel.IsTrainingType) sessionTypes.Add("Обучающая");
+        string sessionTypeString = string.Join(", ", sessionTypes);
+
+        var newSession = new Session
+            {
+                SessionId = nextSessionId,
+                Difficult = 0.5f, // Как вы указали
+
+                DateStart = DateTime.SpecifyKind(sessionCreationModel.StartDate.Value, DateTimeKind.Local).ToUniversalTime(),
+
+            // Для DateFinish: если в модели Session оно DateTime (не DateTime?), то значение должно быть.
+            // Если в sessionCreationModel.EndDate оно DateTime?, то StartDate.Value здесь безопасно из-за проверки выше.
+                DateFinish = DateTime.SpecifyKind(sessionCreationModel.EndDate.Value, DateTimeKind.Local).ToUniversalTime(),
+
+                Time = new TimeSpan(sessionCreationModel.DurationHours ?? 0, sessionCreationModel.DurationMinutes ?? 0, sessionCreationModel.DurationSeconds ?? 0),
+                SessionType = sessionTypeString.Contains("Контрольная") ? SessionType.Exam : SessionType.Practice,
+
+            // Инициализируем коллекции, чтобы избежать NullReferenceException при добавлении
+                SessionTests = new List<Data.Models.SessionTest>(),
+                Groups = new List<Data.Models.Group>()
+            // Grades, SolutionsByPrograms, SolutionsByUsers будут заполняться позже
+            };
+
+        try
+        {
+            Db.Sessions.Add(newSession);
+            await Db.SaveChangesAsync();
+
+            foreach (var algoConfig in sessionCreationModel.AlgorithmConfigurations.Where(ac => ac.TestCount > 0))
+            {
+                var testsToIncludeForThisAlgo = new List<TestConfigViewModel>();
+                var garantTests = algoConfig.ConfiguredTests.Where(tc => tc.IsIncluded && tc.InclusionMode == TestInclusionMode.Garant).ToList();
+                testsToIncludeForThisAlgo.AddRange(garantTests);
+
+                int reserveNeeded = algoConfig.TestCount - garantTests.Count;
+                if (reserveNeeded > 0)
+                {
+                    var reserveCandidates = algoConfig.ConfiguredTests
+                        .Where(tc => tc.IsIncluded && tc.InclusionMode == TestInclusionMode.Reserve)
+                        .OrderBy(tc => Guid.NewGuid())
+                        .Take(reserveNeeded)
+                        .ToList();
+                    testsToIncludeForThisAlgo.AddRange(reserveCandidates);
+                }
+
+                // Если после отбора гарант + резерв не набралось TestCount,
+                // и пользователь просто указал TestCount, не выбирая тесты детально,
+                // то нужно добавить случайные из тех, что еще не включены.
+                // Это сложная логика, пока оставим отбор только из IsIncluded.
+                // Если algoConfig.ConfiguredTests пуст, но TestCount > 0, это означает,
+                // что тесты не были загружены/сконфигурированы в UI для этого алгоритма.
+                // В этом случае, нужно либо загрузить их здесь, либо взять случайные.
+
+                if (!testsToIncludeForThisAlgo.Any() && algoConfig.ConfiguredTests.Any(tc => tc.IsIncluded))
+                {
+                    // Этого не должно быть, если TestCount > 0 и есть IsIncluded тесты
+                    Console.WriteLine($"Предупреждение: для алгоритма {algoConfig.AlgorithmName} указано TestCount={algoConfig.TestCount}, но не отобрано тестов.");
+                }
+                else if (!algoConfig.ConfiguredTests.Any(tc => tc.IsIncluded) && algoConfig.TestCount > 0)
+                {
+                    // Пользователь указал TestCount, но не выбрал ни одного теста (IsIncluded=false для всех)
+                    // или список ConfiguredTests пуст (не были показаны).
+                    // В этом случае берем TestCount случайных тестов этого алгоритма.
+                    var randomTestsForAlgo = await Db.Tests
+                        .Where(t => t.AlgoId == algoConfig.AlgorithmId)
+                        .OrderBy(t => Guid.NewGuid())
+                        .Take(algoConfig.TestCount)
+                        .ToListAsync();
+                    foreach (var test in randomTestsForAlgo)
+                    {
+                        Db.SessionTests.Add(new SessionTest { SessionId = newSession.SessionId, TestId = test.TestId });
+                    }
+                }
+
+
+                foreach (var testConf in testsToIncludeForThisAlgo) // Только те, что отобраны
+                {
+                    Db.SessionTests.Add(new SessionTest { SessionId = newSession.SessionId, TestId = testConf.TestId });
+                    // Здесь также нужно будет сохранить InclusionMode, если это поле есть в SessionTest
+                }
+            }
+            // 2. Добавляем группы
+            // Сначала получаем список ID выбранных групп из локальной ViewModel коллекции
+            List<int> selectedGroupIds = availableGroupsForSelection
+                                        .Where(vm => vm.IsSelected)
+                                        .Select(vm => vm.GroupId)
+                                        .ToList();
+
+            if (selectedGroupIds.Any())
+            {
+                // Затем используем этот список ID для запроса к базе данных
+                var groupEntitiesFromDb = await Db.Groups
+                                                .Where(g => selectedGroupIds.Contains(g.GroupId)) // Теперь EF Core может это транслировать в SQL (WHERE GroupId IN (...))
+                                                .ToListAsync();
+
+                // Добавляем найденные сущности групп к сессии
+                foreach (var groupEntity in groupEntitiesFromDb)
+                {
+                    newSession.Groups.Add(groupEntity);
+                }
+            }
+
+
+            await Db.SaveChangesAsync();
+
+            formMessage = $"Сессия успешно создана с ID: {newSession.SessionId}";
+            isError = false;
+            await Task.Delay(1500); // Для отображения сообщения
+            NavigationManager.NavigateTo("/sessions");
+
+        }
+        catch (Exception ex)
+        {
+            formMessage = "Ошибка при создании сессии: " + ex.Message + (ex.InnerException != null ? " -> " + ex.InnerException.Message : "");
+            isError = true;
+            Console.WriteLine(ex.ToString());
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}
