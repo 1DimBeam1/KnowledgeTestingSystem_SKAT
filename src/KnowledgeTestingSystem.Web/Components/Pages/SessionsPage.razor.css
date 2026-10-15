@@ -1,8 +1,9 @@
-﻿/* wwwroot/css/SessionsPage.css - на основе AdminPageCSS.css */
+﻿/* Components/Pages/SessionsPage.razor.css */
+
 .sessions-main-container {
     display: flex;
     flex-direction: column;
-    min-height: calc(100vh - 3.5rem); /* Если есть NavMenu */
+    height: calc(100vh - 3.5rem);
     background-color: #f0f0f0;
 }
 
@@ -10,11 +11,7 @@
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-    /* width: 100%; - убрал, т.к. flex-grow уже есть */
 }
-
-/* Оставляем .content-header, если он будет использоваться (в примере его нет) */
-/* .content-header { ... } */
 
 .search-bar {
     padding: 10px 15px;
@@ -22,14 +19,14 @@
     border-bottom: 1px solid #333377;
 }
 
-    .search-bar input {
-        width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #5555bb;
-        background-color: #eef;
-        color: #1a1a50;
-        box-sizing: border-box;
-    }
+.search-bar input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #5555bb;
+    background-color: #eef;
+    color: #1a1a50;
+    box-sizing: border-box;
+}
 
 .session-list {
     flex-grow: 1;
@@ -44,28 +41,28 @@
     background-color: #1a1a50;
     color: white;
     margin: 10px 0;
-    border: 1px solid black;
+    border: 1px solid #333;
+    border-radius: 4px;
 }
 
 .session-name {
     padding: 15px;
     flex-grow: 1;
+    font-size: 1rem;
 }
 
 .session-action button {
-    padding: 15px 20px;
+    padding: 10px 20px;
     border: none;
     color: white;
     cursor: pointer;
     font-weight: bold;
-    height: 100%;
-    border-left: 1px solid black;
-}
-
-.btn-results, .btn-continue, .btn-start {
     background-color: #008000;
+    border-left: 1px solid #333;
+    white-space: nowrap;
+    height: 100%;
 }
 
-    .btn-results:hover, .btn-continue:hover, .btn-start:hover {
-        background-color: #006400;
-    }
+.session-action button:hover {
+    background-color: #006400;
+}

@@ -39,7 +39,10 @@ namespace InterpretatorService.Services
             var codeModel = new CodeModel
             {
                 CodeId = codeId,
-                Path = codeFilePath
+                Path = codeFilePath,
+                OutputFilePath = codeFilePath.Replace(".cs", "output.txt"),
+                ErrorFilePath = codeFilePath.Replace(".cs", "errors.txt"),
+                WarningFilePath = codeFilePath.Replace(".cs", "warnings.txt")
             };
 
             try

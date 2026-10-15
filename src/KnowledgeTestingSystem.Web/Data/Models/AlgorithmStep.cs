@@ -7,6 +7,6 @@ public partial class AlgorithmStep
     public string Description { get; set; } = string.Empty;
     public float Difficult { get; set; }
 
-    public virtual Algorithm Algo { get; set; } = null!;
-    public virtual ICollection<TrackedVariable> TrackedVariables { get; set; } = new List<TrackedVariable>();
+    public virtual Algorithm? Algo { get; set; }
+    public virtual ICollection<TrackedVariable>? TrackedVariables { get; set; }
 }

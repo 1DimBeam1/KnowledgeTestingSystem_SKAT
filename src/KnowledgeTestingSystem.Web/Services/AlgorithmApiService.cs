@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
-using System.Net.Http;
-using System.Net.Http.Json;
+using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Serialization; // Для JsonPropertyName
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Forms;
-using Microsoft.Extensions.Configuration; // Для IConfiguration
-using Microsoft.Extensions.Logging; // Для логирования
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using InterpretatorService.Interfaces;
+using KnowledgeTestingSystem.Web.Data;
 
 namespace KnowledgeTestingSystem.Web.Services
 {
@@ -230,90 +231,81 @@ namespace KnowledgeTestingSystem.Web.Services
 
     public class AlgorithmApiService
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiBaseUrl;
+        private readonly KnowledgeTestingDbContext _context;
+        private readonly IInterpreterService _interpreterService;
+        private readonly ILogger<AlgorithmApiService> _logger;
 
-        public AlgorithmApiService(HttpClient httpClient, IConfiguration configuration)
+        private static readonly string StorageDirectory = Path.Combine(
+            Directory.GetCurrentDirectory(), "code_files");
+
+        public AlgorithmApiService(
+            KnowledgeTestingDbContext context,
+            IInterpreterService interpreterService,
+            ILogger<AlgorithmApiService> logger)
         {
-            _httpClient = httpClient;
-            // Получаем URL API из appsettings.json
-            _apiBaseUrl = configuration["ApiSettings:InterpretatorServiceUrl"]; // Порт Docker
+            _context = context;
+            _interpreterService = interpreterService;
+            _logger = logger;
         }
 
-        // Метод для получения списка ID файлов (соответствует GET /api/code/list)
-        // Можно в будущем использовать для проверки наличия файлов с кодом, т.к. он проверяет по директории
+        // Метод для получения списка ID файлов (заменён с GET /api/code/list)
         public async Task<List<int>?> GetAlgorithmIdsAsync()
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/list");
-                if (response.IsSuccessStatusCode)
-                {
-                    var result = await response.Content.ReadFromJsonAsync<CodeFileIdsResponse>();
-                    return result?.CodeIds;
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error getting algorithm IDs: {response.StatusCode} - {errorContent}");
-                    return null;
-                }
+                var ids = await _context.Algorithms.Select(a => a.AlgoId).ToListAsync();
+                _logger.LogInformation($"Fetched {ids.Count} algorithm IDs");
+                return ids;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetAlgorithmIdsAsync: {ex.Message}");
+                _logger.LogError(ex, "Error getting algorithm IDs");
                 return null;
             }
         }
 
-        // Метод для получения исходного кода (соответствует GET /api/code/{algoId}/source)
+        // Метод для получения исходного кода (заменён с GET /api/code/{algoId}/source)
         public async Task<string?> GetAlgorithmSourceAsync(int algoId)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/{algoId}/source");
-                if (response.IsSuccessStatusCode)
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                if (!System.IO.File.Exists(codeFilePath))
                 {
-                    return await response.Content.ReadAsStringAsync();
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error getting source for algoId {algoId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Source file not found for algoId {algoId}: {codeFilePath}");
                     return null;
                 }
+                var source = await System.IO.File.ReadAllTextAsync(codeFilePath);
+                _logger.LogInformation($"Fetched source for algoId {algoId}, length: {source.Length}");
+                return source;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetAlgorithmSourceAsync for algoId {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting source for algoId {AlgoId}", algoId);
                 return null;
             }
         }
 
-        // получение списка алгоритмов (ID и Имя)
+        // получение списка алгоритмов (ID и Имя) (заменён с GET /api/code/algorithms)
         public async Task<List<AlgorithmListItemClientDto>?> GetAlgorithmsListAsync()
         {
             try
             {
-                //Console.WriteLine($"AlgorithmApiService: Requesting {_apiBaseUrl}/api/code/algorithms");
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/algorithms");
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var algorithms = await response.Content.ReadFromJsonAsync<List<AlgorithmListItemClientDto>>();
-                    //Console.WriteLine($"AlgorithmApiService: Received {algorithms?.Count ?? 0} algorithms.");
-                    return algorithms;
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"AlgorithmApiService: Error getting algorithms list: {response.StatusCode} - {errorContent}");
-                    return null;
-                }
+                var algorithms = await _context.Algorithms
+                    .OrderBy(a => a.AlgoName)
+                    .Select(a => new AlgorithmListItemClientDto
+                    {
+                        AlgoId = a.AlgoId,
+                        AlgorithmName = a.AlgoName
+                    })
+                    .ToListAsync();
+                
+                _logger.LogInformation($"Fetched {algorithms.Count} algorithms");
+                return algorithms;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"AlgorithmApiService: Exception in GetAlgorithmsListAsync: {ex.Message}");
+                _logger.LogError(ex, "Error getting algorithms list");
                 return null;
             }
         }
@@ -322,18 +314,27 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/{algoId}/picture");
-                if (response.IsSuccessStatusCode)
+                var algorithm = await _context.Algorithms.FindAsync(algoId);
+                if (algorithm == null || string.IsNullOrEmpty(algorithm.PicPath))
                 {
-                    return await response.Content.ReadAsByteArrayAsync();
+                    _logger.LogWarning($"No picture found for algoId {algoId}");
+                    return null;
                 }
-                var errorContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Error getting picture for algoId {algoId}: {response.StatusCode} - {errorContent}");
-                return null;
+
+                var picturePath = algorithm.PicPath;
+                if (!System.IO.File.Exists(picturePath))
+                {
+                    _logger.LogWarning($"Picture file not found for algoId {algoId}: {picturePath}");
+                    return null;
+                }
+
+                var pictureBytes = await System.IO.File.ReadAllBytesAsync(picturePath);
+                _logger.LogInformation($"Fetched picture for algoId {algoId}, size: {pictureBytes.Length} bytes");
+                return pictureBytes;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetAlgorithmPictureAsync for algoId {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting picture for algoId {AlgoId}", algoId);
                 return null;
             }
         }
@@ -342,162 +343,305 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                //Console.WriteLine($"AlgorithmApiService: Requesting editor bundle for algoId {algoId}");
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/{algoId}/editor_bundle");
-                if (response.IsSuccessStatusCode)
+                var algorithm = await _context.Algorithms
+                    .Include(a => a.AlgorithmSteps)
+                    .FirstOrDefaultAsync(a => a.AlgoId == algoId);
+                
+                if (algorithm == null)
                 {
-                    return await response.Content.ReadFromJsonAsync<ClientAlgorithmEditorBundleDto>();
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"AlgorithmApiService: Error getting editor bundle for {algoId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Algorithm not found for editor bundle: {algoId}");
                     return null;
                 }
+
+                // Читаем исходный код из файла
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                var codeContent = System.IO.File.Exists(codeFilePath)
+                    ? await System.IO.File.ReadAllTextAsync(codeFilePath)
+                    : string.Empty;
+
+                // Формируем шаги из БД
+                var configuredSteps = await _context.AlgorithmSteps
+                    .Where(a => a.AlgoId == algoId)
+                    .OrderBy(a => a.AlgoStep)
+                    .Include(a => a.TrackedVariables)
+                    .ToListAsync();
+
+                var allConfiguredSteps = new List<ClientAlgorithmStepDetailDto>();
+                foreach (var step in configuredSteps)
+                {
+                    var trackedVars = await _context.TrackedVariables
+                        .Where(tv => tv.AlgoId == algoId && tv.AlgoStep == step.AlgoStep)
+                        .OrderBy(tv => tv.Sequence)
+                        .ToListAsync();
+
+                    allConfiguredSteps.Add(new ClientAlgorithmStepDetailDto
+                    {
+                        StepNumber = step.AlgoStep,
+                        Description = step.Description,
+                        LineNumber = trackedVars.Any() ? trackedVars.First().LineNumber : 0,
+                        Variables = trackedVars.Select(tv => tv.VarName).ToList(),
+                        VarType = trackedVars.Any() ? trackedVars.First().VarType : null,
+                        Difficult = step.Difficult
+                    });
+                }
+
+                var result = new ClientAlgorithmEditorBundleDto
+                {
+                    AlgoId = algorithm.AlgoId,
+                    AlgorithmName = algorithm.AlgoName,
+                    PicPath = algorithm.PicPath,
+                    CodeContent = codeContent,
+                    AllConfiguredSteps = allConfiguredSteps
+                };
+
+                _logger.LogInformation($"Fetched editor bundle for algoId {algoId}, steps: {allConfiguredSteps.Count}");
+                return result;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"AlgorithmApiService: Exception in GetAlgorithmEditorBundleAsync for {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting editor bundle for algoId {AlgoId}", algoId);
                 return null;
             }
         }
 
 
         public async Task<ClientCreateAlgorithmResponseDto?> CreateAlgorithmAsync(
-    string name,
-    string codeContent,
-    List<InputValueSetupViewModel> clientInputSetups,
-    List<TrackingStepViewModel> clientTrackingSteps,
-    IBrowserFile? imageFile)
+            string name,
+            string codeContent,
+            List<InputValueSetupViewModel> clientInputSetups,
+            List<TrackingStepViewModel> clientTrackingSteps,
+            IBrowserFile? imageFile)
         {
-            using var formData = new MultipartFormDataContent();
-            formData.Add(new StringContent(name), "AlgorithmName");
-            formData.Add(new StringContent(codeContent), "CodeContent");
-
-            var allStepsForApi = new List<ClientAlgorithmStepDetailDto>();
-            foreach (var setup in clientInputSetups.Where(s => !string.IsNullOrWhiteSpace(s.VariableName)))
-            {
-                allStepsForApi.Add(new ClientAlgorithmStepDetailDto
-                {
-                    StepNumber = 0,
-                    Description = setup.Description ?? "",
-                    LineNumber = setup.LineNumberInCode,
-                    Variables = new List<string> { setup.VariableName }
-                });
-            }
-            foreach (var step in clientTrackingSteps)
-            {
-                allStepsForApi.Add(new ClientAlgorithmStepDetailDto
-                {
-                    StepNumber = step.StepNumber,
-                    Description = step.Description,
-                    LineNumber = step.LineNumberInCode,
-                    Variables = step.GetVariableList()
-                });
-            }
-            if (allStepsForApi.Any())
-            {
-                formData.Add(new StringContent(JsonSerializer.Serialize(allStepsForApi)), "AllStepsJson");
-            }
-
-            if (imageFile != null)
-            {
-                var imageStreamContent = new StreamContent(imageFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024));
-                imageStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(imageFile.ContentType);
-                formData.Add(imageStreamContent, "ImageFile", imageFile.Name);
-            }
-
             try
             {
-                var response = await _httpClient.PostAsync($"{_apiBaseUrl}/api/code/create_algorithm", formData);
-                if (response.IsSuccessStatusCode)
+                // Создаём алгоритм в БД
+                var algorithm = new Data.Models.Algorithm
                 {
-                    return await response.Content.ReadFromJsonAsync<ClientCreateAlgorithmResponseDto>();
+                    AlgoName = name,
+                    SrcPath = Path.Combine(StorageDirectory, $"{Guid.NewGuid()}.cs"),
+                    PicPath = string.Empty
+                };
+
+                _context.Algorithms.Add(algorithm);
+                await _context.SaveChangesAsync();
+
+                int algoId = algorithm.AlgoId;
+
+                // Сохраняем файл кода
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                await System.IO.File.WriteAllTextAsync(codeFilePath, codeContent);
+                algorithm.SrcPath = codeFilePath;
+
+                // Сохраняем картинку, если передана
+                if (imageFile != null)
+                {
+                    var imageFileName = $"{algoId}_{Guid.NewGuid()}{System.IO.Path.GetExtension(imageFile.Name)}";
+                    var imageFilePath = Path.Combine(StorageDirectory, "images", imageFileName);
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(imageFilePath)!);
+                    using var imageStream = imageFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+                    using var fileStream = new System.IO.FileStream(imageFilePath, System.IO.FileMode.Create);
+                    await imageStream.CopyToAsync(fileStream);
+                    algorithm.PicPath = imageFilePath;
                 }
-                var errorContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Error creating algorithm: {response.StatusCode} - {errorContent}");
-                return null;
+
+                // Сохраняем шаги и переменные
+                int stepNumber = 0;
+                
+                // Входные переменные (StepNumber = 0 — это входные данные)
+                foreach (var setup in clientInputSetups.Where(s => !string.IsNullOrWhiteSpace(s.VariableName)))
+                {
+                    stepNumber++;
+                    var algoStep = new Data.Models.AlgorithmStep
+                    {
+                        AlgoId = algoId,
+                        AlgoStep = stepNumber,
+                        Description = setup.Description ?? "",
+                        Difficult = 0.5f
+                    };
+                    _context.AlgorithmSteps.Add(algoStep);
+
+                    var trackedVar = new Data.Models.TrackedVariable
+                    {
+                        AlgoId = algoId,
+                        AlgoStep = stepNumber,
+                        Sequence = stepNumber,
+                        LineNumber = setup.LineNumberInCode,
+                        VarName = setup.VariableName!,
+                        VarType = string.Empty // Тип определяется при выполнении
+                    };
+                    _context.TrackedVariables.Add(trackedVar);
+                }
+
+                // Шаги отслеживания
+                foreach (var step in clientTrackingSteps)
+                {
+                    stepNumber++;
+                    var algoStep = new Data.Models.AlgorithmStep
+                    {
+                        AlgoId = algoId,
+                        AlgoStep = step.StepNumber,
+                        Description = step.Description,
+                        Difficult = 0.5f
+                    };
+                    _context.AlgorithmSteps.Add(algoStep);
+
+                    var variables = step.GetVariableList();
+                    for (int i = 0; i < variables.Count; i++)
+                    {
+                        var trackedVar = new Data.Models.TrackedVariable
+                        {
+                            AlgoId = algoId,
+                            AlgoStep = step.StepNumber,
+                            Sequence = i + 1,
+                            LineNumber = step.LineNumberInCode,
+                            VarName = variables[i],
+                            VarType = string.Empty
+                        };
+                        _context.TrackedVariables.Add(trackedVar);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Created algorithm {algoId} with name '{name}', steps: {stepNumber}");
+                return new ClientCreateAlgorithmResponseDto { AlgoId = algoId };
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in CreateAlgorithmAsync: {ex.Message}");
+                _logger.LogError(ex, "Error creating algorithm {Name}", name);
                 return null;
             }
         }
 
         public async Task<bool> UpdateAlgorithmAsync(
-    int algoId,
-    string name,
-    string codeContent,
-    List<InputValueSetupViewModel> clientInputSetups,
-    List<TrackingStepViewModel> clientTrackingSteps,
-    IBrowserFile? imageFile)
+            int algoId,
+            string name,
+            string codeContent,
+            List<InputValueSetupViewModel> clientInputSetups,
+            List<TrackingStepViewModel> clientTrackingSteps,
+            IBrowserFile? imageFile)
         {
-            using var formData = new MultipartFormDataContent();
-            formData.Add(new StringContent(name), "AlgorithmName");
-            formData.Add(new StringContent(codeContent), "CodeContent");
-
-            var allStepsForApi = new List<ClientAlgorithmStepDetailDto>();
-            foreach (var setup in clientInputSetups.Where(s => !string.IsNullOrWhiteSpace(s.VariableName)))
-            {
-                allStepsForApi.Add(new ClientAlgorithmStepDetailDto
-                {
-                    StepNumber = 0,
-                    Description = setup.Description ?? "",
-                    LineNumber = setup.LineNumberInCode,
-                    Variables = new List<string> { setup.VariableName }
-                });
-            }
-            foreach (var step in clientTrackingSteps)
-            {
-                allStepsForApi.Add(new ClientAlgorithmStepDetailDto
-                {
-                    StepNumber = step.StepNumber,
-                    Description = step.Description,
-                    LineNumber = step.LineNumberInCode,
-                    Variables = step.GetVariableList()
-                });
-            }
-            if (allStepsForApi.Any())
-            {
-                formData.Add(new StringContent(JsonSerializer.Serialize(allStepsForApi)), "AllStepsJson");
-            }
-
-            if (imageFile != null)
-            {
-                var imageStreamContent = new StreamContent(imageFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024));
-                imageStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(imageFile.ContentType);
-                formData.Add(imageStreamContent, "ImageFile", imageFile.Name);
-            }
-
             try
             {
-                var response = await _httpClient.PutAsync($"{_apiBaseUrl}/api/code/{algoId}/update_algorithm", formData);
-                return response.IsSuccessStatusCode;
+                // Проверяем существование алгоритма (без отслеживания)
+                var algorithmExists = await _context.Algorithms.AnyAsync(a => a.AlgoId == algoId);
+                if (!algorithmExists)
+                {
+                    _logger.LogWarning($"Algorithm not found for update: {algoId}");
+                    return false;
+                }
+
+                // Обновляем имя алгоритма (через ExecuteAsync для избежания отслеживания)
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE algorithms SET algo_name = {name}, src_path = '{Path.Combine(StorageDirectory, $"{algoId}.cs")}' WHERE algo_id = {algoId}");
+
+                // Сохраняем файл кода
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                await System.IO.File.WriteAllTextAsync(codeFilePath, codeContent);
+
+                // Сохраняем картинку, если передана
+                if (imageFile != null)
+                {
+                    var imageFileName = $"{algoId}_{Guid.NewGuid()}{System.IO.Path.GetExtension(imageFile.Name)}";
+                    var imageFilePath = Path.Combine(StorageDirectory, "images", imageFileName);
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(imageFilePath)!);
+                    using var imageStream = imageFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+                    using var fileStream = new System.IO.FileStream(imageFilePath, System.IO.FileMode.Create);
+                    await imageStream.CopyToAsync(fileStream);
+
+                    // Обновляем путь к картинке
+                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                        $"UPDATE algorithms SET pic_path = '{imageFilePath}' WHERE algo_id = {algoId}");
+                }
+
+                // Удаляем старые шаги и переменные (через SQL для избежания отслеживания)
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM trackedvariables WHERE algo_id = {algoId}");
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM algorithmsteps WHERE algo_id = {algoId}");
+
+                // Сохраняем новые шаги через SQL (полностью избегаем EF Core tracking)
+                int stepNumber = 0;
+                
+                // Входные переменные
+                foreach (var setup in clientInputSetups.Where(s => !string.IsNullOrWhiteSpace(s.VariableName)))
+                {
+                    stepNumber++;
+                    
+                    // Вставка AlgorithmStep через SQL
+                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                        $"INSERT INTO algorithmsteps (algo_id, algo_step, description, difficult) VALUES ({algoId}, {stepNumber}, '{setup.Description?.Replace("'", "''") ?? ""}', 0.5)");
+                    
+                    // Вставка TrackedVariable через SQL
+                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                        $"INSERT INTO trackedvariables (sequence, line_number, var_type, var_name, algo_step, algo_id) VALUES ({stepNumber}, {setup.LineNumberInCode}, '', '{setup.VariableName?.Replace("'", "''")}', {stepNumber}, {algoId})");
+                }
+
+                // Шаги отслеживания
+                foreach (var step in clientTrackingSteps)
+                {
+                    stepNumber++;
+                    
+                    // Вставка AlgorithmStep через SQL
+                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                        $"INSERT INTO algorithmsteps (algo_id, algo_step, description, difficult) VALUES ({algoId}, {step.StepNumber}, '{step.Description?.Replace("'", "''")}', 0.5)");
+                    
+                    var variables = step.GetVariableList();
+                    for (int i = 0; i < variables.Count; i++)
+                    {
+                        // Вставка TrackedVariable через SQL
+                        await _context.Database.ExecuteSqlInterpolatedAsync(
+                            $"INSERT INTO trackedvariables (sequence, line_number, var_type, var_name, algo_step, algo_id) VALUES ({i + 1}, {step.LineNumberInCode}, '', '{variables[i]?.Replace("'", "''")}', {step.StepNumber}, {algoId})");
+                    }
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in UpdateAlgorithmAsync for algoId {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error updating algorithm {AlgoId}", algoId);
                 return false;
             }
         }
 
-        // Удаление алгоритма (из TaskManagementEditorPage)
+        // Удаление алгоритма (из TaskManagementEditorPage) (заменён с DELETE /api/code/{id})
         public async Task<bool> DeleteAlgorithmAsync(int algoId)
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"{_apiBaseUrl}/api/code/{algoId}");
-                if (!response.IsSuccessStatusCode)
+                var algorithm = await _context.Algorithms.FindAsync(algoId);
+                if (algorithm == null)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error deleting algorithm {algoId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Algorithm not found for deletion: {algoId}");
+                    return false;
                 }
-                return response.IsSuccessStatusCode;
+
+                // Удаляем связанные данные
+                var steps = _context.AlgorithmSteps.Where(a => a.AlgoId == algoId);
+                var vars = _context.TrackedVariables.Where(tv => tv.AlgoId == algoId);
+                var tests = _context.Tests.Where(t => t.AlgoId == algoId);
+
+                _context.TrackedVariables.RemoveRange(vars);
+                _context.AlgorithmSteps.RemoveRange(steps);
+                _context.Tests.RemoveRange(tests);
+                _context.Algorithms.Remove(algorithm);
+
+                await _context.SaveChangesAsync();
+
+                // Удаляем файлы
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                if (System.IO.File.Exists(codeFilePath))
+                    System.IO.File.Delete(codeFilePath);
+
+                if (!string.IsNullOrEmpty(algorithm.PicPath) && System.IO.File.Exists(algorithm.PicPath))
+                    System.IO.File.Delete(algorithm.PicPath);
+
+                _logger.LogInformation($"Deleted algorithm {algoId}");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in DeleteAlgorithmAsync for algoId {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error deleting algorithm {AlgoId}", algoId);
                 return false;
             }
         }
@@ -506,21 +650,27 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/{algoId}/info");
-                if (response.IsSuccessStatusCode)
+                var algorithm = await _context.Algorithms.FindAsync(algoId);
+                if (algorithm == null)
                 {
-                    return await response.Content.ReadFromJsonAsync<ClientAlgorithmModelDto>();
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error getting algorithm info for {algoId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Algorithm not found for info: {algoId}");
                     return null;
                 }
+
+                var result = new ClientAlgorithmModelDto
+                {
+                    AlgoId = algorithm.AlgoId,
+                    AlgoPath = algorithm.SrcPath,
+                    PicPath = algorithm.PicPath,
+                    AlgorithmName = algorithm.AlgoName
+                };
+
+                _logger.LogInformation($"Fetched info for algorithm {algoId}: {algorithm.AlgoName}");
+                return result;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetAlgorithmInfoAsync for {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting algorithm info for {AlgoId}", algoId);
                 return null;
             }
         }
@@ -529,20 +679,23 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/steps/{algoId}");
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadFromJsonAsync<List<ClientApiAlgoStepDto>>();
-                }
-                else
-                {
-                    Console.WriteLine($"Error getting API steps for {algoId}: {response.StatusCode}");
-                    return null;
-                }
+                var steps = await _context.AlgorithmSteps
+                    .Where(a => a.AlgoId == algoId)
+                    .OrderBy(a => a.AlgoStep)
+                    .Select(a => new ClientApiAlgoStepDto
+                    {
+                        Step = a.AlgoStep,
+                        Description = a.Description,
+                        Difficult = a.Difficult
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"Fetched {steps.Count} steps for algoId {algoId}");
+                return steps;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetApiAlgorithmStepsAsync for {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting API steps for algoId {AlgoId}", algoId);
                 return null;
             }
         }
@@ -551,86 +704,75 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/code/getVariables/{algoId}");
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadFromJsonAsync<List<ClientApiTrackVariableDto>>();
-                }
-                else
-                {
-                    Console.WriteLine($"Error getting API variables for {algoId}: {response.StatusCode}");
-                    return null;
-                }
+                var variables = await _context.TrackedVariables
+                    .Where(tv => tv.AlgoId == algoId)
+                    .OrderBy(tv => tv.Sequence)
+                    .Select(tv => new ClientApiTrackVariableDto
+                    {
+                        Sequence = tv.Sequence,
+                        LineNumber = tv.LineNumber,
+                        VarName = tv.VarName,
+                        VarType = tv.VarType,
+                        Step = tv.AlgoStep
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"Fetched {variables.Count} tracked variables for algoId {algoId}");
+                return variables;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetApiTrackedVariablesAsync for {algoId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting API variables for algoId {AlgoId}", algoId);
                 return null;
             }
         }
 
-        // Метод для проверки выполнения кода
+        // Метод для проверки выполнения кода (заменён с POST /api/code/execute-temporary)
         public async Task<ClientCodeExecutionResponseDto?> ExecuteTemporaryCodeAsync(string codeContent, string language = "cs", int timeout = 20)
         {
             if (string.IsNullOrWhiteSpace(codeContent))
             {
                 return new ClientCodeExecutionResponseDto { IsSuccessful = false, Error = "Код для выполнения пуст." };
             }
-            //Console.WriteLine($"AlgorithmApiService: Sending code for temporary execution. Lang: {language}, Code: {codeContent}, Timeout: {timeout}");
+
             try
             {
-                var request = new ClientCodeExecutionRequestDto
+                // Создаем директорию если не существует
+                if (!System.IO.Directory.Exists(StorageDirectory))
+                    System.IO.Directory.CreateDirectory(StorageDirectory);
+
+                // Сохраняем временный файл
+                var tempFileName = $"temp_{Guid.NewGuid()}.cs";
+                var tempFilePath = Path.Combine(StorageDirectory, tempFileName);
+                await System.IO.File.WriteAllTextAsync(tempFilePath, codeContent);
+
+                // Выполняем код через InterpreterService
+                var codeModel = await _interpreterService.ExecuteCodeAsync(tempFilePath);
+
+                // Удаляем временный файл
+                try
                 {
-                    Language = language,
-                    Code = codeContent,
-                    Timeout = timeout
+                    System.IO.File.Delete(tempFilePath);
+                    System.IO.File.Delete(Path.Combine(StorageDirectory, $"{tempFileName}output.txt"));
+                    System.IO.File.Delete(Path.Combine(StorageDirectory, $"{tempFileName}errors.txt"));
+                    System.IO.File.Delete(Path.Combine(StorageDirectory, $"{tempFileName}warnings.txt"));
+                }
+                catch { /* Игнорируем ошибки удаления временных файлов */ }
+
+                // Маппинг CodeModel → ClientCodeExecutionResponseDto
+                return new ClientCodeExecutionResponseDto
+                {
+                    Output = codeModel.StandardOutput,
+                    Error = codeModel.ErrorOutput,
+                    Warning = codeModel.WarningOutput,
+                    ExecutionTime = 0, // Время выполнения нужно считать отдельно
+                    IsSuccessful = codeModel.IsSuccessful
                 };
-
-                var response = await _httpClient.PostAsJsonAsync($"{_apiBaseUrl}/api/code/execute-temporary", request);
-
-                // Пытаемся десериализовать в любом случае, т.к. API может вернуть CodeResponseDto даже при ошибке (например, BadRequest с телом)
-                ClientCodeExecutionResponseDto? executionResult = null;
-                if (response.Content != null && response.Content.Headers.ContentLength > 0)
-                {
-                    try
-                    {
-                        executionResult = await response.Content.ReadFromJsonAsync<ClientCodeExecutionResponseDto>();
-                    }
-                    catch (JsonException jsonEx)
-                    {
-                        Console.WriteLine($"AlgorithmApiService: Error deserializing temporary execution response: {jsonEx.Message}");
-                        // Если не удалось распарсить, но статус ошибки, создаем DTO с ошибкой
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            var errorBody = await response.Content.ReadAsStringAsync();
-                            return new ClientCodeExecutionResponseDto { IsSuccessful = false, Error = $"Ошибка сервера ({response.StatusCode}): {errorBody}" };
-                        }
-                    }
-                }
-
-                if (response.IsSuccessStatusCode && executionResult != null)
-                {
-                    //Console.WriteLine($"AlgorithmApiService: Temporary execution API call successful. Result - IsSuccessful: {executionResult.IsSuccessful}, Output: '{executionResult.Output}', Error: '{executionResult.Error}'");
-                    return executionResult;
-                }
-                else
-                {
-                    // Если статус не успешный, но мы смогли распарсить тело ошибки
-                    if (executionResult != null && !executionResult.IsSuccessful)
-                    {
-                        Console.WriteLine($"AlgorithmApiService: Temporary execution API call failed (parsed error). Status: {response.StatusCode}, Error: {executionResult.Error}");
-                        return executionResult;
-                    }
-                    // Общая ошибка, если не удалось распарсить или нет тела
-                    var errorContent = executionResult?.Error ?? await response.Content?.ReadAsStringAsync() ?? "Неизвестная ошибка";
-                    Console.WriteLine($"AlgorithmApiService: Error in temporary execution. Status: {response.StatusCode}, Content: {errorContent}");
-                    return new ClientCodeExecutionResponseDto { IsSuccessful = false, Error = $"Ошибка сервера ({response.StatusCode}): {errorContent}" };
-                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"AlgorithmApiService: Exception in ExecuteTemporaryCodeAsync: {ex.Message}");
-                return new ClientCodeExecutionResponseDto { IsSuccessful = false, Error = $"Критическая ошибка при отправке на выполнение: {ex.Message}" };
+                _logger.LogError(ex, "Error in temporary code execution");
+                return new ClientCodeExecutionResponseDto { IsSuccessful = false, Error = $"Критическая ошибка при выполнении: {ex.Message}" };
             }
         }
 
@@ -638,22 +780,26 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/testmanagement/fetch-tests");
-                if (response.IsSuccessStatusCode)
-                {
-                    var tests = await response.Content.ReadFromJsonAsync<List<TestDto>>();
-                    return tests;
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error getting tests list: {response.StatusCode} - {errorContent}");
-                    return null;
-                }
+                var tests = await _context.Tests
+                    .OrderBy(t => t.TestId)
+                    .Select(t => new TestDto
+                    {
+                        TestId = t.TestId,
+                        AlgoId = t.AlgoId,
+                        Description = t.Description,
+                        TestName = t.TestName,
+                        Difficult = t.Difficult,
+                        SolvedCount = t.SolvedCount,
+                        UnsolvedCount = t.UnsolvedCount
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"Fetched {tests.Count} tests");
+                return tests;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetTestsListAsync: {ex.Message}");
+                _logger.LogError(ex, "Error getting tests list");
                 return null;
             }
         }
@@ -662,17 +808,29 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"{_apiBaseUrl}/api/testmanagement/delete-test/{testId}");
-                if (!response.IsSuccessStatusCode)
+                var test = await _context.Tests.FindAsync(testId);
+                if (test == null)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error deleting test {testId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Test not found for deletion: {testId}");
+                    return false;
                 }
-                return response.IsSuccessStatusCode;
+
+                // Удаляем связанные данные
+                var inputData = _context.TestInputData.Where(t => t.TestId == testId);
+                var stepResponses = _context.TestStepResponses.Where(t => t.TestId == testId);
+                
+                _context.TestInputData.RemoveRange(inputData);
+                _context.TestStepResponses.RemoveRange(stepResponses);
+                _context.Tests.Remove(test);
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Deleted test {testId}");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in DeleteTestAsync for testId {testId}: {ex.Message}");
+                _logger.LogError(ex, "Error deleting test {TestId}", testId);
                 return false;
             }
         }
@@ -681,21 +839,69 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/testmanagement/fetch-test-details/{testId}");
-                if (response.IsSuccessStatusCode)
+                // Загружаем тест с связанными данными
+                var test = await _context.Tests
+                    .Include(t => t.Algo)
+                    .FirstOrDefaultAsync(t => t.TestId == testId);
+
+                if (test == null)
                 {
-                    return await response.Content.ReadFromJsonAsync<TestDetailsDto>();
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error getting test details for {testId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Test not found for details: {testId}");
                     return null;
                 }
+
+                // Загружаем входные данные теста
+                var inputData = await _context.TestInputData
+                    .Where(t => t.TestId == testId)
+                    .ToListAsync();
+
+                // Загружаем шаги алгоритма
+                var algoSteps = await _context.AlgorithmSteps
+                    .Where(a => a.AlgoId == test.AlgoId)
+                    .OrderBy(a => a.AlgoStep)
+                    .ToListAsync();
+
+                var result = new TestDetailsDto
+                {
+                    Test = new TestDto
+                    {
+                        TestId = test.TestId,
+                        AlgoId = test.AlgoId,
+                        Description = test.Description,
+                        TestName = test.TestName,
+                        Difficult = test.Difficult,
+                        SolvedCount = test.SolvedCount,
+                        UnsolvedCount = test.UnsolvedCount
+                    },
+                    Algorithm = new ClientAlgorithmModelDto
+                    {
+                        AlgoId = test.Algo.AlgoId,
+                        AlgoPath = test.Algo.SrcPath,
+                        PicPath = test.Algo.PicPath,
+                        AlgorithmName = test.Algo.AlgoName
+                    },
+                    InputTestData = inputData.Select(t => new InputTestDataDto
+                    {
+                        TestId = t.TestId,
+                        VarName = t.VarName,
+                        VarValue = t.VarValue,
+                        VarType = t.VarType,
+                        LineNumber = t.LineNumber
+                    }).ToList(),
+                    AlgoSteps = algoSteps.Select(a => new ClientApiAlgoStepDto
+                    {
+                        Step = a.AlgoStep,
+                        Description = a.Description,
+                        Difficult = a.Difficult
+                    }).ToList()
+                };
+
+                _logger.LogInformation($"Fetched details for test {testId}: {test.TestName}");
+                return result;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in GetTestDetailsAsync for {testId}: {ex.Message}");
+                _logger.LogError(ex, "Error getting test details for {TestId}", testId);
                 return null;
             }
         }
@@ -704,22 +910,55 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var requestBody = new { test, inputData };
-                var response = await _httpClient.PostAsJsonAsync($"{_apiBaseUrl}/api/testmanagement/create-test", requestBody);
-                if (response.IsSuccessStatusCode)
+                // Создаём тест в БД
+                var testEntity = new Data.Models.Test
                 {
-                    return await response.Content.ReadFromJsonAsync<TestDto>();
-                }
-                else
+                    AlgoId = test.AlgoId,
+                    Description = test.Description ?? "",
+                    TestName = test.TestName ?? "",
+                    Difficult = test.Difficult,
+                    SolvedCount = test.SolvedCount,
+                    UnsolvedCount = test.UnsolvedCount
+                };
+
+                _context.Tests.Add(testEntity);
+                await _context.SaveChangesAsync();
+
+                int testId = testEntity.TestId;
+
+                // Сохраняем входные данные
+                if (inputData != null && inputData.Any())
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error creating test: {response.StatusCode} - {errorContent}");
-                    return null;
+                    foreach (var input in inputData)
+                    {
+                        var testData = new Data.Models.TestInputData
+                        {
+                            TestId = testId,
+                            VarName = input.VarName ?? "",
+                            VarValue = input.VarValue ?? "",
+                            VarType = input.VarType ?? "",
+                            LineNumber = input.LineNumber
+                        };
+                        _context.TestInputData.Add(testData);
+                    }
+                    await _context.SaveChangesAsync();
                 }
+
+                _logger.LogInformation($"Created test {testId} for algoId {test.AlgoId}");
+                return new TestDto
+                {
+                    TestId = testId,
+                    AlgoId = test.AlgoId,
+                    Description = test.Description,
+                    TestName = test.TestName,
+                    Difficult = test.Difficult,
+                    SolvedCount = test.SolvedCount,
+                    UnsolvedCount = test.UnsolvedCount
+                };
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in CreateTestAsync: {ex.Message}");
+                _logger.LogError(ex, "Error creating test for algoId {AlgoId}", test?.AlgoId);
                 return null;
             }
         }
@@ -728,18 +967,50 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var requestBody = new { test, inputData };
-                var response = await _httpClient.PutAsJsonAsync($"{_apiBaseUrl}/api/testmanagement/update-test/{testId}", requestBody);
-                if (!response.IsSuccessStatusCode)
+                var testEntity = await _context.Tests.FindAsync(testId);
+                if (testEntity == null)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error updating test {testId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Test not found for update: {testId}");
+                    return false;
                 }
-                return response.IsSuccessStatusCode;
+
+                // Обновляем данные теста
+                testEntity.AlgoId = test.AlgoId;
+                testEntity.Description = test.Description ?? "";
+                testEntity.TestName = test.TestName ?? "";
+                testEntity.Difficult = test.Difficult;
+                testEntity.SolvedCount = test.SolvedCount;
+                testEntity.UnsolvedCount = test.UnsolvedCount;
+
+                // Удаляем старые входные данные
+                var existingInput = _context.TestInputData.Where(t => t.TestId == testId);
+                _context.TestInputData.RemoveRange(existingInput);
+
+                // Сохраняем новые входные данные
+                if (inputData != null && inputData.Any())
+                {
+                    foreach (var input in inputData)
+                    {
+                        var testData = new Data.Models.TestInputData
+                        {
+                            TestId = testId,
+                            VarName = input.VarName ?? "",
+                            VarValue = input.VarValue ?? "",
+                            VarType = input.VarType ?? "",
+                            LineNumber = input.LineNumber
+                        };
+                        _context.TestInputData.Add(testData);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Updated test {testId}");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in UpdateTestAsync for {testId}: {ex.Message}");
+                _logger.LogError(ex, "Error updating test {TestId}", testId);
                 return false;
             }
         }
@@ -748,22 +1019,235 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync($"{_apiBaseUrl}/api/code/update-values/{algoId}", updates);
-                if (response.IsSuccessStatusCode)
+                // Проверка входных данных
+                if (updates == null || !updates.Any())
                 {
-                    var result = await response.Content.ReadFromJsonAsync<CreateTestResponseDto>();
-                    return result?.TestId;
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error creating test with values: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning("Empty updates list for CreateTestWithValuesAsync");
                     return null;
+                }
+
+                // Проверка уникальности VariableName
+                var duplicateVarNames = updates.GroupBy(u => u.VariableName)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key);
+                if (duplicateVarNames.Any())
+                {
+                    _logger.LogWarning($"Duplicate variable names: {string.Join(", ", duplicateVarNames)}");
+                    return null;
+                }
+
+                // Проверка существования алгоритма
+                var algorithm = await _context.Algorithms.FindAsync(algoId);
+                if (algorithm == null)
+                {
+                    _logger.LogWarning($"Algorithm not found for CreateTestWithValuesAsync: {algoId}");
+                    return null;
+                }
+
+                var codeFilePath = Path.Combine(StorageDirectory, $"{algoId}.cs");
+                if (!System.IO.File.Exists(codeFilePath))
+                {
+                    _logger.LogWarning($"Code file not found: {codeFilePath}");
+                    return null;
+                }
+
+                var codeLines = await System.IO.File.ReadAllLinesAsync(codeFilePath);
+                var typeMap = new Dictionary<string, (string Type, int Rank, int Line, int LineCount)>();
+
+                // Определяем типы переменных
+                for (int i = 0; i < codeLines.Length; i++)
+                {
+                    var line = codeLines[i].Trim();
+                    if (line.Contains("=") && !line.StartsWith("//"))
+                    {
+                        var parts = line.Split('=', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0)
+                        {
+                            var decl = parts[0].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                            if (decl.Length >= 2)
+                            {
+                                var type = decl[0];
+                                var name = decl[1].TrimEnd(';');
+                                int rank = type.EndsWith("[]") ? 1 : type.EndsWith("[,]") ? 2 : 0;
+                                type = type.Replace("[]", string.Empty).Replace("[,]", string.Empty);
+                                int lineCount = 1;
+
+                                if (rank > 0)
+                                {
+                                    int j = i;
+                                    int braceCount = codeLines[i].Count(c => c == '{') - codeLines[i].Count(c => c == '}');
+                                    bool foundSemicolon = codeLines[i].Trim().EndsWith(";");
+                                    while (j < codeLines.Length && (!foundSemicolon || braceCount > 0))
+                                    {
+                                        j++;
+                                        if (j < codeLines.Length)
+                                        {
+                                            braceCount += codeLines[j].Count(c => c == '{') - codeLines[j].Count(c => c == '}');
+                                            foundSemicolon |= codeLines[j].Trim().EndsWith(";");
+                                        }
+                                    }
+                                    lineCount = j - i + (foundSemicolon ? 1 : 0);
+                                }
+
+                                typeMap[name] = (type, rank, i + 1, lineCount);
+                            }
+                        }
+                    }
+                }
+
+                // Копируем строки для модификации
+                var newLines = codeLines.ToList();
+                foreach (var updateGroup in updates.GroupBy(u => u.LineNumber))
+                {
+                    int lineNumber = updateGroup.Key;
+                    if (lineNumber > codeLines.Length)
+                    {
+                        _logger.LogWarning($"Line {lineNumber} out of bounds");
+                        return null;
+                    }
+
+                    foreach (var update in updateGroup)
+                    {
+                        if (!typeMap.TryGetValue(update.VariableName, out var typeInfo))
+                        {
+                            _logger.LogWarning($"Variable {update.VariableName} not found in code");
+                            return null;
+                        }
+
+                        if (typeInfo.Line != lineNumber)
+                        {
+                            _logger.LogWarning($"Variable {update.VariableName} not initialized at line {lineNumber}");
+                            return null;
+                        }
+
+                        string newValue;
+                        if (typeInfo.Rank == 0)
+                        {
+                            if (typeInfo.Type == "string")
+                                newValue = $"\"{update.Value}\"";
+                            else if (typeInfo.Type == "char")
+                                newValue = $"'{update.Value}'";
+                            else
+                                newValue = update.Value;
+                        }
+                        else if (typeInfo.Rank == 1)
+                        {
+                            newValue = $"{{ {update.Value} }}";
+                        }
+                        else
+                        {
+                            var rows = updateGroup.Where(u => u.VariableName == update.VariableName)
+                                .Select(u => u.Value).ToList();
+                            newValue = $"{{ {{ {string.Join("}, {", rows)} }} }}";
+                        }
+
+                        var originalLine = codeLines[typeInfo.Line - 1];
+                        var assignIndex = originalLine.IndexOf('=');
+                        if (assignIndex < 0)
+                        {
+                            _logger.LogWarning($"Assignment operator not found for {update.VariableName}");
+                            return null;
+                        }
+
+                        newLines[typeInfo.Line - 1] = originalLine.Substring(0, assignIndex + 1) + $" {newValue};";
+
+                        for (int i = 1; i < typeInfo.LineCount; i++)
+                        {
+                            if (typeInfo.Line - 1 + i < newLines.Count)
+                                newLines[typeInfo.Line - 1 + i] = "";
+                        }
+                    }
+                }
+
+                while (newLines.Count < codeLines.Length)
+                    newLines.Add("");
+
+                // Начинаем транзакцию
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                // Сохраняем временный тестовый файл для проверки
+                var tryExecuteFilePath = Path.Combine(StorageDirectory, $"test{algoId}_-1.cs");
+                await System.IO.File.WriteAllTextAsync(tryExecuteFilePath, string.Join("\n", newLines));
+
+                var codeModel = await _interpreterService.ExecuteCodeAsync(tryExecuteFilePath);
+
+                var filesToDelete = new List<string>
+                {
+                    Path.Combine(StorageDirectory, $"test{algoId}_-1.cs"),
+                    Path.Combine(StorageDirectory, $"test{algoId}_-1output.txt"),
+                    Path.Combine(StorageDirectory, $"test{algoId}_-1errors.txt"),
+                    Path.Combine(StorageDirectory, $"test{algoId}_-1warnings.txt"),
+                };
+
+                if (!codeModel.IsSuccessful)
+                {
+                    foreach (var file in filesToDelete)
+                        if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
+                    
+                    _logger.LogWarning($"Test execution failed: {codeModel.ErrorOutput}");
+                    return null;
+                }
+
+                try
+                {
+                    // Создаём запись в таблице tests
+                    var test = new Data.Models.Test
+                    {
+                        AlgoId = algoId,
+                        Description = "",
+                        TestName = "",
+                        Difficult = 0.5f,
+                        SolvedCount = 0,
+                        UnsolvedCount = 0
+                    };
+
+                    _context.Tests.Add(test);
+                    await _context.SaveChangesAsync();
+
+                    int testId = test.TestId;
+
+                    // Создаём записи в таблице testinputdata
+                    foreach (var update in updates)
+                    {
+                        if (!typeMap.TryGetValue(update.VariableName, out var typeInfo))
+                            continue;
+                        string type = typeInfo.Type + string.Concat(Enumerable.Repeat("[]", typeInfo.Rank));
+                        var testData = new Data.Models.TestInputData
+                        {
+                            TestId = testId,
+                            VarName = update.VariableName,
+                            VarValue = update.Value,
+                            VarType = type,
+                            LineNumber = update.LineNumber
+                        };
+                        _context.TestInputData.Add(testData);
+                    }
+
+                    await _context.SaveChangesAsync();
+
+                    // Сохраняем тестовый файл
+                    var testFilePath = Path.Combine(StorageDirectory, $"test{algoId}_{testId}.cs");
+                    await System.IO.File.WriteAllTextAsync(testFilePath, string.Join("\n", newLines));
+
+                    // Фиксируем транзакцию
+                    await transaction.CommitAsync();
+
+                    // Удаляем временные файлы
+                    foreach (var file in filesToDelete)
+                        if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
+
+                    _logger.LogInformation($"Created test {testId} for algoId {algoId}");
+                    return testId;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in CreateTestWithValuesAsync: {ex.Message}");
+                _logger.LogError(ex, "Error in CreateTestWithValuesAsync for algoId {AlgoId}", algoId);
                 return null;
             }
         }
@@ -772,17 +1256,29 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"{_apiBaseUrl}/api/testmanagement/create-helper/{testId}", test);
-                if (!response.IsSuccessStatusCode)
+                var testEntity = await _context.Tests.FindAsync(testId);
+                if (testEntity == null)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error updating test with create-helper {testId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Test not found for CreateHelperAsync: {testId}");
+                    return false;
                 }
-                return response.IsSuccessStatusCode;
+
+                // Обновляем данные теста
+                testEntity.AlgoId = test.AlgoId;
+                testEntity.Description = test.Description ?? "";
+                testEntity.TestName = test.TestName ?? "";
+                testEntity.Difficult = test.Difficult;
+                testEntity.SolvedCount = test.SolvedCount;
+                testEntity.UnsolvedCount = test.UnsolvedCount;
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Updated test {testId} via CreateHelperAsync");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in CreateHelperAsync for testId {testId}: {ex.Message}");
+                _logger.LogError(ex, "Error in CreateHelperAsync for testId {TestId}", testId);
                 return false;
             }
         }
@@ -791,17 +1287,44 @@ namespace KnowledgeTestingSystem.Web.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_apiBaseUrl}/api/code/modify-test/{codeId}/{testId}", null);
-                if (!response.IsSuccessStatusCode)
+                // Проверяем существование теста и алгоритма
+                var test = await _context.Tests.FindAsync(testId);
+                if (test == null)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error modifying test {testId} for codeId {codeId}: {response.StatusCode} - {errorContent}");
+                    _logger.LogWarning($"Test not found for ModifyTestAsync: {testId}");
+                    return false;
                 }
-                return response.IsSuccessStatusCode;
+
+                var algorithm = await _context.Algorithms.FindAsync(codeId);
+                if (algorithm == null)
+                {
+                    _logger.LogWarning($"Algorithm not found for ModifyTestAsync: {codeId}");
+                    return false;
+                }
+
+                // Проверяем существование модифицированного файла
+                var modifiedCodePath = Path.Combine(StorageDirectory, $"test{codeId}_{testId}modified.cs");
+                if (!System.IO.File.Exists(modifiedCodePath))
+                {
+                    _logger.LogWarning($"Modified code file not found: {modifiedCodePath}");
+                    return false;
+                }
+
+                // Выполняем модифицированный код
+                var codeModel = await _interpreterService.ExecuteCodeAsync(modifiedCodePath);
+                
+                if (!codeModel.IsSuccessful)
+                {
+                    _logger.LogWarning($"ModifyTestAsync execution failed for test {testId}: {codeModel.ErrorOutput}");
+                    return false;
+                }
+
+                _logger.LogInformation($"Successfully modified test {testId} for codeId {codeId}");
+                return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Exception in ModifyTestAsync for codeId {codeId}, testId {testId}: {ex.Message}");
+                _logger.LogError(ex, "Error in ModifyTestAsync for codeId {CodeId}, testId {TestId}", codeId, testId);
                 return false;
             }
         }
@@ -812,122 +1335,47 @@ namespace KnowledgeTestingSystem.Web.Services
 
         public async Task<string?> GetAlgorithmPictureUrlAsync(int algoId)
         {
-            //string requestUri = $"Code/{algoId}/picture";
-
             try
             {
-                //HttpResponseMessage response = await _httpClient.GetAsync(requestUri);
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/api/Code/{algoId}/picture");
+                var algorithm = await _context.Algorithms.FindAsync(algoId);
+                if (algorithm == null || string.IsNullOrEmpty(algorithm.PicPath))
+                {
+                    return null;
+                }
 
-                if (response.IsSuccessStatusCode)
+                var picturePath = algorithm.PicPath;
+                if (!System.IO.File.Exists(picturePath))
                 {
-                    byte[] imageBytes = await response.Content.ReadAsByteArrayAsync();
-                    if (imageBytes != null && imageBytes.Length > 0)
-                    {
-                        // Определяем тип контента для правильного data URL
-                        string? contentType = response.Content.Headers.ContentType?.MediaType;
-                        if (string.IsNullOrEmpty(contentType))
-                        {
-                            // Пытаемся угадать или установить по умолчанию (например, image/png)
-                            // Это важно, чтобы браузер правильно отобразил base64
-                            contentType = "image/jpeg"; // Или image/jpeg, image/gif и т.д.
-                        }
-                        string base64Image = Convert.ToBase64String(imageBytes);
-                        return $"data:{contentType};base64,{base64Image}";
-                    }
+                    _logger.LogWarning($"Picture file not found for algoId {algoId}: {picturePath}");
                     return null;
                 }
-                else
+
+                var imageBytes = await System.IO.File.ReadAllBytesAsync(picturePath);
+                if (imageBytes == null || imageBytes.Length == 0)
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
                     return null;
                 }
-            }
-            catch (HttpRequestException ex)
-            {
-                return null;
+
+                // Определяем тип контента по расширению файла
+                string contentType;
+                var extension = System.IO.Path.GetExtension(picturePath).ToLowerInvariant();
+                switch (extension)
+                {
+                    case ".png": contentType = "image/png"; break;
+                    case ".gif": contentType = "image/gif"; break;
+                    case ".bmp": contentType = "image/bmp"; break;
+                    case ".webp": contentType = "image/webp"; break;
+                    default: contentType = "image/jpeg"; break;
+                }
+
+                string base64Image = Convert.ToBase64String(imageBytes);
+                return $"data:{contentType};base64,{base64Image}";
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error getting picture URL for algoId {AlgoId}", algoId);
                 return null;
             }
         }
     }
 }
-
-
-
-        //public class AlgorithmApiService
-        //{
-        //    private readonly HttpClient _httpClient;
-        //    private readonly ILogger<AlgorithmApiService> _logger;
-
-        //    // Внедряем IHttpClientFactory для получения именованного клиента
-        //    public AlgorithmApiService(IHttpClientFactory httpClientFactory, ILogger<AlgorithmApiService> logger)
-        //    {
-        //        // Получаем HttpClient, настроенный в Program.cs с именем "ApiSettings"
-        //        _httpClient = httpClientFactory.CreateClient("ApiSettings");
-        //        _logger = logger;
-        //    }
-
-        //    // Метод для получения изображения (или пути к нему)
-        //    // Возвращает string, который может быть URL или base64 строкой изображения.
-        //    // Если API возвращает само изображение (байты), то тип возврата будет byte[]
-        //    // или мы можем сразу преобразовать его в base64 строку.
-        //    public async Task<string?> GetAlgorithmPictureUrlAsync(int algoId)
-        //    {
-        //        string requestUri = $"api/Code/{algoId}/picture";
-        //        _logger.LogInformation("Запрос на получение изображения алгоритма: {RequestUri}", requestUri);
-
-        //        try
-        //        {
-        //            HttpResponseMessage response = await _httpClient.GetAsync(requestUri);
-
-        //            if (response.IsSuccessStatusCode)
-        //            {
-        //                // Вариант 1: Если API возвращает URL изображения в теле ответа (например, JSON {"imageUrl": "..."})
-        //                // var result = await response.Content.ReadFromJsonAsync<AlgorithmPictureResponseDto>();
-        //                // return result?.ImageUrl;
-
-        //                // Вариант 2: Если API возвращает URL изображения как простую строку в теле
-        //                // string imageUrl = await response.Content.ReadAsStringAsync();
-        //                // return imageUrl.Trim('"'); // Убрать кавычки, если они есть
-
-        //                // Вариант 3: Если API возвращает само изображение (байты)
-        //                byte[] imageBytes = await response.Content.ReadAsByteArrayAsync();
-        //                if (imageBytes != null && imageBytes.Length > 0)
-        //                {
-        //                    // Определяем тип контента для правильного data URL
-        //                    string? contentType = response.Content.Headers.ContentType?.MediaType;
-        //                    if (string.IsNullOrEmpty(contentType))
-        //                    {
-        //                        // Пытаемся угадать или установить по умолчанию (например, image/png)
-        //                        // Это важно, чтобы браузер правильно отобразил base64
-        //                        contentType = "image/jpeg"; // Или image/jpeg, image/gif и т.д.
-        //                        _logger.LogWarning("Content-Type для изображения алгоритма {AlgoId} не определен, используется по умолчанию: {ContentType}", algoId, contentType);
-        //                    }
-        //                    string base64Image = Convert.ToBase64String(imageBytes);
-        //                    return $"data:{contentType};base64,{base64Image}";
-        //                }
-        //                _logger.LogWarning("Получено пустое тело ответа для изображения алгоритма {AlgoId}", algoId);
-        //                return null;
-        //            }
-        //            else
-        //            {
-        //                var errorContent = await response.Content.ReadAsStringAsync();
-        //                _logger.LogError("Ошибка при получении изображения для алгоритма {AlgoId}. Статус: {StatusCode}, Ответ: {ErrorContent}",
-        //                    algoId, response.StatusCode, errorContent);
-        //                return null;
-        //            }
-        //        }
-        //        catch (HttpRequestException ex)
-        //        {
-        //            _logger.LogError(ex, "Ошибка HTTP-запроса при получении изображения для алгоритма {AlgoId}", algoId);
-        //            return null;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _logger.LogError(ex, "Непредвиденная ошибка при получении изображения для алгоритма {AlgoId}", algoId);
-        //            return null;
-        //        }
-        //    }

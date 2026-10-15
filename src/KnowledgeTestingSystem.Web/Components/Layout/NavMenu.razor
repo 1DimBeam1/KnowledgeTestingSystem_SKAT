@@ -17,21 +17,24 @@
     <nav class="flex-column">
         <AuthorizeView>
             <Authorized>
+                @{
+                    var user = context.User;
+                    var fullName = user.FindFirst("FullName")?.Value ?? user.Identity?.Name;
+                    var groupName = user.FindFirst("GroupName")?.Value;
+                    var isTeacher = user.IsInRole("Преподаватель");
+                    var isStudent = user.IsInRole("Обучающийся");
+                }
                 <div class="admin-profile-items">
                     <div class="profile-header-nav">Профиль</div>
                     <div class="profile-photo-nav">
                         <img src="images/Users.png" alt="Фото профиля" />
                     </div>
-                    @{
-                        var fullName = context.User.FindFirst("FullName")?.Value ?? context.User.Identity?.Name;
-                        var groupName = context.User.FindFirst("GroupName")?.Value;
-                    }
                     <div class="profile-info-nav profile-name">@fullName</div>
                     <div class="profile-info-nav profile-group">@groupName</div>
                 </div>
                 <!-- Навигационные ссылки (зависят от роли) -->
                 <div class="nav-links-group">
-                    @if (context.User.IsInRole("Преподаватель"))
+                    @if (isTeacher)
                     {
                         <!-- Ссылки для AdminPage -->
                         <div class="nav-item px-3">
@@ -61,7 +64,7 @@
                             </NavLink>
                         </div>
                     }
-                    else if (context.User.IsInRole("Обучающийся"))
+                    else if (isStudent)
                     {
                         <!-- Ссылки для UserPage -->
                         <div class="nav-item px-3">
@@ -84,7 +87,7 @@
                 <div class="nav-item px-3 mt-auto">
                     @* mt-auto прижмет кнопку Выход к низу, если nav-links-group не занимает все место *@
                     <button class="nav-link" @onclick="HandleLogout">
-                        <span class="bi bi-box-arrow-right-nav-menu" aria-hidden="true"></span> Выход (@context.User.Identity?.Name)
+                        <span class="bi bi-box-arrow-right-nav-menu" aria-hidden="true"></span> Выход (@user.Identity?.Name)
                     </button>
                 </div>
             </Authorized>
@@ -100,23 +103,10 @@
 </div>
 
 @code {
-    private string currentUserName = "Загрузка...";
-    private string currentUserGroup = "Загрузка...";
     private bool _isUserPageContext = false;
 
     [CascadingParameter]
     private Task<AuthenticationState>? authenticationStateTask { get; set; }
-
-    protected override async Task OnInitializedAsync()
-    {
-        NavigationManager.LocationChanged += OnLocationChanged;
-        if (authenticationStateTask != null)
-        {
-            var authState = await authenticationStateTask;
-            UpdateUserInfo(authState.User);
-        }
-        UpdatePageContext(NavigationManager.Uri); // Начальная проверка URL
-    }
 
     protected override void OnInitialized()
     {
@@ -138,54 +128,6 @@
         var currentPath = new Uri(uri).AbsolutePath;
         _isUserPageContext = currentPath.Equals("/user", StringComparison.OrdinalIgnoreCase) ||
                              currentPath.StartsWith("/user/", StringComparison.OrdinalIgnoreCase);
-
-        // Обновляем ФИО и группу в зависимости от контекста (или из Claims)
-        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
-        {
-            UpdateUserInfo(authenticationStateTask.Result.User);
-        }
-    }
-
-    private void UpdateUserInfo(ClaimsPrincipal user)
-    {
-        if (user.Identity != null && user.Identity.IsAuthenticated)
-        {
-            currentUserName = user.Identity.Name ?? "Пользователь";
-            // currentUserGroup = user.FindFirst(ClaimTypes.GroupSid)?.Value ?? "Группа не указана"; // Пример, если бы группа была в клеймах
-            currentUserGroup = user.IsInRole("Преподаватель") ? "Преподаватели" : (user.IsInRole("Обучающийся") ? "Обучающиеся" : "");
-        }
-        else
-        {
-            currentUserName = "Профиль";
-            currentUserGroup = "";
-        }
-    }
-
-    private bool IsUserPage()
-    {
-        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
-        {
-            var user = authenticationStateTask.Result.User;
-            if (user.Identity != null && user.Identity.IsAuthenticated)
-            {
-                // Логика отображения меню для роли "Обучающийся"
-                return user.IsInRole("Обучающийся");
-            }
-        }
-        return false;
-    }
-
-    private bool IsAdminPage() // По аналогии для админа
-    {
-        if (authenticationStateTask != null && authenticationStateTask.IsCompletedSuccessfully)
-        {
-            var user = authenticationStateTask.Result.User;
-            if (user.Identity != null && user.Identity.IsAuthenticated)
-            {
-                return user.IsInRole("Преподаватель");
-            }
-        }
-        return false;
     }
 
     private async Task HandleLogout()

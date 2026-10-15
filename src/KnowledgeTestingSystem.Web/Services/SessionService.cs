@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static KnowledgeTestingSystem.Web.Shared.SessionListComponent;
+using KnowledgeTestingSystem.Web.Shared;
 
 namespace KnowledgeTestingSystem.Web.Services
 {
@@ -72,20 +73,20 @@ namespace KnowledgeTestingSystem.Web.Services
             return sessions;
         }
 
-        private KnowledgeTestingSystem.Web.Shared.SessionListComponent.SessionStatus DetermineSessionStatus(Session session)
+        private static SessionListComponent.SessionStatus DetermineSessionStatus(Session session)
         {
             var now = DateTime.UtcNow;
             if (now < session.DateStart)
             {
-                return KnowledgeTestingSystem.Web.Shared.SessionListComponent.SessionStatus.NotStarted;
+                return SessionListComponent.SessionStatus.NotStarted;
             }
             else if (now >= session.DateStart && now <= session.DateFinish)
             {
-                return KnowledgeTestingSystem.Web.Shared.SessionListComponent.SessionStatus.InProgress;
+                return SessionListComponent.SessionStatus.InProgress;
             }
             else
             {
-                return KnowledgeTestingSystem.Web.Shared.SessionListComponent.SessionStatus.Completed;
+                return SessionListComponent.SessionStatus.Completed;
             }
         }
     }

@@ -7,30 +7,28 @@ namespace KnowledgeTestingSystem.Web.Services
 {
     public class AuthService
     {
-        private readonly KnowledgeTestingDbContext _context;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public AuthService(KnowledgeTestingDbContext context)
+        public AuthService(IServiceScopeFactory scopeFactory)
         {
-            _context = context;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task<User?> ValidateUserAsync(string username, string password)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-            {
                 return null;
-            }
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Login == username);
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<KnowledgeTestingDbContext>();
+            
+            var user = await context.Users.FirstOrDefaultAsync(u => u.Login == username);
 
-            if (user != null)
-            {
-                if (user.Password == password)
-                {
-                    return user;
-                }
-            }
+            if (user != null && user.Password == password)
+                return user;
+            
             return null;
         }
     }
+
 }

@@ -7,6 +7,6 @@ public partial class Algorithm
     public string PicPath { get; set; } = string.Empty;
     public string AlgoName { get; set; } = string.Empty;
 
-    public virtual ICollection<AlgorithmStep> AlgorithmSteps { get; set; } = new List<AlgorithmStep>();
-    public virtual ICollection<Test> Tests { get; set; } = new List<Test>();
+    public virtual ICollection<AlgorithmStep>? AlgorithmSteps { get; set; }
+    public virtual ICollection<Test>? Tests { get; set; }
 }

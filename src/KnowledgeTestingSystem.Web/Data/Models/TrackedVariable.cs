@@ -9,5 +9,5 @@ public partial class TrackedVariable
     public int AlgoStep { get; set; }
     public int AlgoId { get; set; }
 
-    public virtual AlgorithmStep AlgorithmStep { get; set; } = null!;
+    public virtual AlgorithmStep? AlgorithmStep { get; set; }
 }

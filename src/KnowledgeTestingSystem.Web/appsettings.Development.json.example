@@ -1,0 +1,12 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "KnowledgeTestingDb": "Host=localhost;Port=5432;Database=TestBase;Username=YOUR_USERNAME;Password=YOUR_PASSWORD;"
+  }
+}

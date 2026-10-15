@@ -17,7 +17,12 @@ builder.Services.AddRazorComponents()
 
 // === EF Core — единый DbContext ===
 builder.Services.AddDbContext<KnowledgeTestingDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("KnowledgeTestingDb")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("KnowledgeTestingDb"),
+                        sql => sql.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        null))
+);
 
 // === Authentication ===
 builder.Services.AddAuthenticationCore();
@@ -28,21 +33,10 @@ builder.Services.AddScoped<AuthService>();
 // === Services ===
 builder.Services.AddScoped<SessionService>();
 builder.Services.AddScoped<EvaluationApiService>();
+builder.Services.AddScoped<IEvaluationEngine, EvaluationEngine>();
 builder.Services.AddScoped<IInterpreterService, InterpreterService>();
-
-// === HttpClient for external API calls (kept for backward compatibility) ===
-builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("EvaluationApiClient", client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["EvaluationService:BaseUrl"] ?? "http://localhost:32770/api/");
-    client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-});
-
-builder.Services.AddHttpClient("ApiSettings", client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["ApiSettings:InterpretatorServiceUrl"] ?? "http://localhost:32768");
-    client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-});
+builder.Services.AddScoped<AlgorithmApiService>();
+builder.Services.AddScoped<IValueSubstitutionService, ValueSubstitutionService>();
 
 // === JSON Serialization (NewtonsoftJson for MarkSubsystem) ===
 builder.Services.AddControllersWithViews()
@@ -74,6 +68,16 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Создаем директорию для файлов кода при запуске
+var codeFilesDir = Path.Combine(Directory.GetCurrentDirectory(), "code_files");
+if (!System.IO.Directory.Exists(codeFilesDir))
+    System.IO.Directory.CreateDirectory(codeFilesDir);
+
+// Создаем директорию для логов при запуске
+var logsDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+if (!System.IO.Directory.Exists(logsDir))
+    System.IO.Directory.CreateDirectory(logsDir);
 
 // === Swagger ===
 if (app.Environment.IsDevelopment())

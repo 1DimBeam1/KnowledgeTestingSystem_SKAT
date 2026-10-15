@@ -31,8 +31,8 @@ namespace InterpretatorService.Controllers
     {
         private readonly IInterpreterService _interpreterService;
         private readonly KnowledgeTestingDbContext _dbContext;
-        private const string StorageDirectory = "/app/code_files";
-        private readonly string _debugLogPath = "/app/code_files/debug.txt";
+        private const string StorageDirectory = "/code_files";
+        private readonly string _debugLogPath = "/code_files/debug.txt";
 
         public CodeController(IInterpreterService interpreterService, KnowledgeTestingDbContext dbContext)
         {

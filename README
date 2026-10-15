@@ -14,6 +14,11 @@ dotnet restore
 dotnet ef database update
 dotnet run
 ```
+## Заполнение данными
+```bash
+docker cp seed-data.sql knowledgetestingsystem-postgres-1:/tmp/seed-data.sql ##кидаем в контейнер бинарник скрипта
+docker exec -it knowledgetestingsystem-postgres-1 psql -U admin -d TestBase -f /tmp/seed-data.sql ##выполняем скрипт
+```
 
 ## Подключение к БД
 - Host: 127.0.0.1

@@ -99,9 +99,9 @@ public partial class KnowledgeTestingDbContext : DbContext
         // TrackedVariable
         modelBuilder.Entity<TrackedVariable>(entity =>
         {
-            entity.HasKey(e => e.Sequence);
+            entity.HasKey(e => new { e.Sequence, e.AlgoId, e.AlgoStep });
             entity.ToTable("trackedvariables");
-            entity.HasIndex(e => new { e.AlgoId, e.AlgoStep }, "IX_trackedvariables_algo_id_algo_step");
+            entity.HasIndex(e => new { e.AlgoId, e.AlgoStep }, "IX_trackedvariables_algo_id_algo_step").IsUnique();
 
             entity.Property(e => e.Sequence).HasColumnName("sequence");
             entity.Property(e => e.AlgoId).HasColumnName("algo_id");

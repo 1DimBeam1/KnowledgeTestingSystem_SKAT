@@ -13,9 +13,9 @@
     background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
 }
 
-    .navbar-toggler:checked {
-        background-color: rgba(255, 255, 255, 0.5);
-    }
+.navbar-toggler:checked {
+    background-color: rgba(255, 255, 255, 0.5);
+}
 
 .top-row {
     height: 3.5rem;
@@ -46,14 +46,14 @@
 }
 
 .bi-gear-fill-nav-menu {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-gear-fill' viewBox='0 0 16 16'%3E%3Cpath d='M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-gear-fill' viewBox='0 0 16 16'%3E%3Cpath d='M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1-.872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z'/%3E%3C/svg%3E");
 }
 
 .bi-house-door-fill-nav-menu {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-house-door-fill' viewBox='0 0 16 16'%3E%3Cpath d='M6.5 14.5v-3.505c0-.245.25-.495.5-.495h2c.25 0 .5.25.5.5v3.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 1.5 7.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5Z'/%3E%3C/svg%3E");
 }
 
-.bi-bar-chart-line-fill-nav-menu { /* Иконка для "Статистика" */
+.bi-bar-chart-line-fill-nav-menu {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' class='bi bi-bar-chart-line-fill' viewBox='0 0 16 16'%3E%3Cpath d='M11 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12h.5a.5.5 0 0 1 0 1H.5a.5.5 0 0 1 0-1H1v-3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3h1V7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7h1V2zm1 12h2V2h-2v12zm-3 0V7H7v7h2zm-4 0V4H2v10h2z'/%3E%3C/svg%3E");
 }
 
@@ -61,14 +61,16 @@
     display: none;
     background-color: #1a1a50;
     color: white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 0;
 }
 
-    /* Заставляем nav занимать всю высоту .nav-scrollable и быть flex-колонкой */
-    .nav-scrollable > nav.flex-column {
-        display: flex;
-        flex-direction: column;
-        height: 100%; /* Очень важно для прижатия элементов к низу */
-    }
+.nav-scrollable > nav.flex-column {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
 
 .navbar-toggler:checked ~ .nav-scrollable {
     display: block;
@@ -76,71 +78,83 @@
 
 /* Стили для секции Профиля */
 .admin-profile-items {
-    /* Контейнер для элементов профиля */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 15px 10px;
+    background-color: #0d0d29;
+    border-bottom: 1px solid #333377;
+    gap: 8px;
+    flex-shrink: 0;
+    width: 100%;
 }
 
 .profile-header-nav {
-    padding: 10px 15px;
-    font-weight: bold;
-    background-color: #0d0d29;
-    text-align: center; /* Текст "Профиль" по центру */
-    border-bottom: 1px solid #333377;
-    color: white;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 4px;
+    text-align: center;
 }
 
 .profile-photo-nav {
-    width: 120px; /* Ширина зоны для фото */
-    height: 120px; /* Высота зоны для фото */
-    background-color: #333399; /* Фон, если фото не загружено или прозрачное */
-    margin: 20px auto 15px auto; /* Отступы: верх, право/лево авто (для центрирования), низ */
-    border: 1px solid #5555bb;
-    border-radius: 50%; /* Делаем фото круглым */
-    overflow: hidden; /* Обрезаем изображение по кругу */
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 50px;
+    height: 50px;
+    min-width: 50px;
+    min-height: 50px;
+    max-width: 50px;
+    max-height: 50px;
+    background-color: #333399;
+    border-radius: 8px;
+    border: 2px solid #5555bb;
+    overflow: hidden;
+    flex-shrink: 0;
+    flex-grow: 0;
+    flex-basis: 50px;
 }
 
-    .profile-photo-nav img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover; /* Масштабирует изображение, чтобы заполнить контейнер, обрезая лишнее */
-    }
+.profile-photo-nav img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    max-width: 50px;
+    max-height: 50px;
+    flex-shrink: 0;
+}
 
 .profile-info-nav {
-    background-color: #333399;
-    padding: 8px 15px; /* Уменьшим немного вертикальный padding */
-    margin: 0 15px 5px 15px; /* Уменьшим нижний отступ для более плотного расположения */
-    border: 1px solid #5555bb;
-    text-align: center; /* Текст ФИО и Группы по центру */
+    text-align: center;
     color: white;
-    border-radius: 4px; /* Небольшое скругление углов */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-    .profile-info-nav.profile-name {
-        margin-bottom: 10px; /* Увеличим отступ после ФИО */
-    }
-
-/* Распорка */
-.sidebar-spacer-nav {
-    flex-grow: 1; /* Занимает все доступное пространство, отталкивая ссылки вниз */
-    background-color: #cccccc;
-    margin: 20px 15px; /* Отступы сверху/снизу и по бокам */
-    border: 1px solid #aaaaaa;
-    min-height: 20px; /* Минимальная высота, чтобы был виден */
+.profile-info-nav.profile-name {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
-/* Группа навигационных ссылок */
-.nav-links-group {
-    /* Этот блок будет прижат к низу благодаря .sidebar-spacer-nav */
+.profile-info-nav.profile-group {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
 }
 
 .nav-item {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
     padding-bottom: 0.5rem;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* Убираем отступ у первого nav-item в группе, т.к. отступ теперь у spacer или группы */
 .nav-links-group .nav-item:first-of-type {
     padding-top: 0;
 }
@@ -149,26 +163,52 @@
     padding-bottom: 1rem;
 }
 
-.nav-item ::deep .nav-link {
-    color: #d7d7d7;
+.nav-item .nav-link {
+    color: #e0e0e0;
     background: none;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     height: 3rem;
     display: flex;
     align-items: center;
     line-height: 3rem;
     width: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 500;
+    transition: all 0.2s ease;
 }
 
-.nav-item ::deep a.active {
+.nav-item a.active {
     background-color: rgba(255,255,255,0.37);
     color: white;
 }
 
-.nav-item ::deep .nav-link:hover {
-    background-color: rgba(255,255,255,0.1);
+.nav-item .nav-link:hover {
+    background-color: rgba(255,255,255,0.15);
     color: white;
+    transform: translateX(2px);
+}
+
+.nav-item button.nav-link {
+    color: #e0e0e0;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    line-height: 3rem;
+    width: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.nav-item button.nav-link:hover {
+    background-color: rgba(255,255,255,0.15);
+    color: white;
+    transform: translateX(2px);
 }
 
 @media (min-width: 641px) {

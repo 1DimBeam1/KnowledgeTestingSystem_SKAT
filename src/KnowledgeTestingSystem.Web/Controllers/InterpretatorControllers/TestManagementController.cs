@@ -20,7 +20,7 @@ public class TestManagementController : ControllerBase
 {
     private readonly KnowledgeTestingDbContext _context;
     private readonly ILogger<TestManagementController> _logger;
-    private const string StorageDirectory = "/app/code_files";
+    private const string StorageDirectory = "/code_files";
 
     public TestManagementController(KnowledgeTestingDbContext context, ILogger<TestManagementController> logger)
     {

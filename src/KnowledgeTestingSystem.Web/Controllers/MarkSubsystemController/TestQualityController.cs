@@ -18,7 +18,8 @@ public class TestQualityController : ControllerBase
 {
     private readonly KnowledgeTestingDbContext _context;
     private readonly ILogger<TestQualityController> _logger;
-    private const string DebugLogPath = "/app/logs/debug.txt";
+    private static readonly string DebugLogPath = Path.Combine(
+        Directory.GetCurrentDirectory(), "logs", "debug.txt");
 
     public TestQualityController(KnowledgeTestingDbContext context, ILogger<TestQualityController> logger)
     {

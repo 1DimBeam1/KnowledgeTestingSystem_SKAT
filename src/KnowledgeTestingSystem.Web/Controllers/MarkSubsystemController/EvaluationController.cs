@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using KnowledgeTestingSystem.Web.Data;
 using KnowledgeTestingSystem.Web.Data.Models;
+using KnowledgeTestingSystem.Web.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,14 +21,18 @@ namespace MarkSubsystem.Controllers;
 public class EvaluationController : ControllerBase
 {
     private readonly KnowledgeTestingDbContext _context;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IValueSubstitutionService _valueSubstitutionService;
     private readonly ILogger<EvaluationController> _logger;
-    private const string DebugLogPath = "/app/logs/debug.txt";
+    private static readonly string DebugLogPath = Path.Combine(
+        Directory.GetCurrentDirectory(), "logs", "debug.txt");
 
-    public EvaluationController(KnowledgeTestingDbContext context, IHttpClientFactory httpClientFactory, ILogger<EvaluationController> logger)
+    public EvaluationController(
+        KnowledgeTestingDbContext context,
+        IValueSubstitutionService valueSubstitutionService,
+        ILogger<EvaluationController> logger)
     {
         _context = context;
-        _httpClientFactory = httpClientFactory;
+        _valueSubstitutionService = valueSubstitutionService;
         _logger = logger;
     }
 
@@ -134,7 +139,7 @@ public class EvaluationController : ControllerBase
 
                 var stepToLineNumberMap = new Dictionary<int, int>();
 
-                var validSequences = new List<(int Sequence, List<VariableSubmissionDto> Variables)>();
+                var validSequences = new List<(int Sequence, List<global::MarkSubsystem.DTO.VariableSubmissionDto> Variables)>();
                 foreach (var sequence in sequences)
                 {
                     var step = sequence.Variables.First().Step;
@@ -163,6 +168,7 @@ public class EvaluationController : ControllerBase
                 }
 
                 var fileContent = new StringBuilder();
+                var userDataList = new List<(int Sequence, int LineNumber, string VariableName, string VariableValue)>();
                 foreach (var (sequence, variables) in validSequences)
                 {
                     var step = variables.First().Step;
@@ -170,23 +176,21 @@ public class EvaluationController : ControllerBase
                     foreach (var variable in variables)
                     {
                         fileContent.AppendLine($"{sequence} {algoVar.LineNumber} {variable.VariableName} {variable.VariableValue}");
+                        userDataList.Add((sequence, algoVar.LineNumber, variable.VariableName, variable.VariableValue));
                     }
                 }
 
                 var fileContentString = fileContent.ToString();
-                await LogDebug($"Substitute-values file content for testId={testId}:\n{fileContentString}");
+                await LogDebug($"Substitute-values data for testId={testId}: {userDataList.Count} entries");
 
-                using var content = new MultipartFormDataContent();
-                var fileStream = new MemoryStream(Encoding.UTF8.GetBytes(fileContentString));
-                content.Add(new StreamContent(fileStream), "userDataFile", "input.txt");
+                // Вызываем ValueSubstitutionService напрямую (замена HTTP-вызова)
+                await LogDebug($"Calling substitute-values for testId={testId}, algoId={testData.AlgoId}");
+                var substituteResult = await _valueSubstitutionService.SubstituteValuesAsync(
+                    testData.AlgoId, testId, userDataList);
 
-                using var httpClient = _httpClientFactory.CreateClient();
-                await LogDebug($"Sending POST to /api/Code/substitute-values/{testData.AlgoId}/{testId}");
-                var substituteResponse = await httpClient.PostAsync($"http://localhost:32768/api/Code/substitute-values/{testData.AlgoId}/{testId}", content);
-                if (!substituteResponse.IsSuccessStatusCode)
+                if (!substituteResult.IsSuccessful)
                 {
-                    var errorContent = await substituteResponse.Content.ReadAsStringAsync();
-                    var errorMessage = $"Failed to substitute values for testId={testId}: status={substituteResponse.StatusCode}, response={errorContent}";
+                    var errorMessage = $"Substitute-values failed for testId={testId}: {substituteResult.ErrorOutput}";
                     await LogError(errorMessage);
                     if (request.Type == 0)
                     {
@@ -194,11 +198,16 @@ public class EvaluationController : ControllerBase
                     }
                     continue;
                 }
+                await LogDebug($"Substitute-values response for testId={testId}: {substituteResult.Values.Count} values, {substituteResult.Mismatches.Count} mismatches");
 
-                var substituteResult = await substituteResponse.Content.ReadFromJsonAsync<SubstituteValuesResponseDto>();
-                if (substituteResult == null || !substituteResult.CodeModel.IsSuccessful)
+                // Получаем истинные значения программы (пустые пользовательские данные)
+                await LogDebug($"Fetching true program values for testId={testId}");
+                var trueSubstituteResult = await _valueSubstitutionService.SubstituteValuesAsync(
+                    testData.AlgoId, testId, new List<(int, int, string, string)>());
+
+                if (!trueSubstituteResult.IsSuccessful)
                 {
-                    var errorMessage = $"Substitute-values failed for testId={testId}: IsSuccessful={substituteResult?.CodeModel.IsSuccessful}, Mismatches={JsonSerializer.Serialize(substituteResult?.Mismatches)}";
+                    var errorMessage = $"True substitute-values failed for testId={testId}: {trueSubstituteResult.ErrorOutput}";
                     await LogError(errorMessage);
                     if (request.Type == 0)
                     {
@@ -206,38 +215,7 @@ public class EvaluationController : ControllerBase
                     }
                     continue;
                 }
-                await LogDebug($"Substitute-values response: {JsonSerializer.Serialize(substituteResult)}");
-
-                using var trueContent = new MultipartFormDataContent();
-                var trueFileStream = new MemoryStream(Encoding.UTF8.GetBytes("-"));
-                trueContent.Add(new StreamContent(trueFileStream), "userDataFile", "input.txt");
-
-                await LogDebug($"Sending POST to /api/Code/substitute-values/{testData.AlgoId}/{testId} for true program values");
-                var trueSubstituteResponse = await httpClient.PostAsync($"http://localhost:32768/api/Code/substitute-values/{testData.AlgoId}/{testId}", trueContent);
-                if (!trueSubstituteResponse.IsSuccessStatusCode)
-                {
-                    var errorContent = await trueSubstituteResponse.Content.ReadAsStringAsync();
-                    var errorMessage = $"Failed to fetch true program values for testId={testId}: status={trueSubstituteResponse.StatusCode}, response={errorContent}";
-                    await LogError(errorMessage);
-                    if (request.Type == 0)
-                    {
-                        response.Errors.Add(new ErrorDto { TestId = testId, Message = errorMessage });
-                    }
-                    continue;
-                }
-
-                var trueSubstituteResult = await trueSubstituteResponse.Content.ReadFromJsonAsync<SubstituteValuesResponseDto>();
-                if (trueSubstituteResult == null || !trueSubstituteResult.CodeModel.IsSuccessful)
-                {
-                    var errorMessage = $"True substitute-values failed for testId={testId}: IsSuccessful={trueSubstituteResult?.CodeModel.IsSuccessful}, Mismatches={JsonSerializer.Serialize(trueSubstituteResult?.Mismatches)}";
-                    await LogError(errorMessage);
-                    if (request.Type == 0)
-                    {
-                        response.Errors.Add(new ErrorDto { TestId = testId, Message = errorMessage });
-                    }
-                    continue;
-                }
-                await LogDebug($"True substitute-values response: {JsonSerializer.Serialize(trueSubstituteResult)}");
+                await LogDebug($"True substitute-values response for testId={testId}: {trueSubstituteResult.Values.Count} values");
 
                 var stepResults = new List<StepResultDto>();
                 var testStepResponses = new List<TestStepResponse>();
@@ -1221,92 +1199,6 @@ public class EvaluationController : ControllerBase
     private async Task<string> GetDebugLogPath() => DebugLogPath;
 }
 
-// DTO для входного запроса
-public class EvaluationRequestDto
-{
-    public int UserId { get; set; }
-    public int SessionId { get; set; }
-    public int Type { get; set; }
-    public List<TestSubmissionDto> Tests { get; set; } = new List<TestSubmissionDto>();
-}
-
-public class TestSubmissionDto
-{
-    public int TestId { get; set; }
-    public List<VariableSubmissionDto> Variables { get; set; } = new List<VariableSubmissionDto>();
-}
-
-public class VariableSubmissionDto
-{
-    public int Sequence { get; set; }
-    public int Step { get; set; }
-    public string VariableName { get; set; } = string.Empty;
-    public string VariableValue { get; set; } = string.Empty;
-}
-
-// DTO для ответа
-public class EvaluationResponseDto
-{
-    public List<ErrorDto>? Errors { get; set; }
-    public float? Score { get; set; }
-}
-
-public class ErrorDto
-{
-    public int? TestId { get; set; }
-    public int? Sequence { get; set; }
-    public int? Step { get; set; }
-    public string? VariableName { get; set; }
-    public string Message { get; set; } = string.Empty;
-}
-
-// DTO для ответа от getVariables
-public class AlgoVariableDto
-{
-    public int Sequence { get; set; }
-    public int LineNumber { get; set; }
-    public string VarName { get; set; } = string.Empty;
-    public string VarType { get; set; } = string.Empty;
-    public int Step { get; set; }
-}
-
-// DTO для ответа от substitute-values
-public class SubstituteValuesResponseDto
-{
-    public CodeModelDto CodeModel { get; set; } = new CodeModelDto();
-    public List<SubstituteValueDto> Values { get; set; } = new List<SubstituteValueDto>();
-    public List<object> Mismatches { get; set; } = new List<object>();
-    public MetaDto Meta { get; set; } = new MetaDto();
-}
-
-public class CodeModelDto
-{
-    public int CodeId { get; set; }
-    public string Path { get; set; } = string.Empty;
-    public string StandardOutput { get; set; } = string.Empty;
-    public string? ErrorOutput { get; set; }
-    public string? WarningOutput { get; set; }
-    public string OutputFilePath { get; set; } = string.Empty;
-    public string ErrorFilePath { get; set; } = string.Empty;
-    public string WarningFilePath { get; set; } = string.Empty;
-    public bool IsSuccessful { get; set; }
-}
-
-public class SubstituteValueDto
-{
-    public int Step { get; set; }
-    public int TrackerHitId { get; set; }
-    public string VariableName { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
-    public int Rank { get; set; }
-    public string Value { get; set; } = string.Empty;
-}
-
-public class MetaDto
-{
-    public List<object> UserSteps { get; set; } = new List<object>();
-    public List<object> ProgramSteps { get; set; } = new List<object>();
-}
 
 // DTO для статистики пользователя
 public class UserSolutionNewDto

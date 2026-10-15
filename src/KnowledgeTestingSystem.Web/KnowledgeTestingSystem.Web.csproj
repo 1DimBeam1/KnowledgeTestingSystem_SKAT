@@ -40,7 +40,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="code_files\" />
+    <Compile Remove="code_files\**" />
+    <Content Remove="code_files\**" />
   </ItemGroup>
 
 </Project>
